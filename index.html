@@ -376,6 +376,11 @@ function App() {
     return { labor, material, subtotal, adderAmt, grand: subtotal + adderAmt, byTab, count: active.length };
   }, [rows, adders]);
 
+  /* Detailed mode with an empty estimator silently prices repairs at $0, which
+     flatters every downstream number — profit, MAO, verdict. Flag it loudly
+     rather than let a $0 rehab pass as a real deal. Display-only; no math changes. */
+  const noScope = deal.repairMode === "detailed" && est.count === 0;
+
   /* ---- analyzer math ---- */
   const calc = useMemo(() => {
     const arv = num(deal.arv), purchase = num(deal.purchase), sqft = num(deal.sqft);
@@ -618,7 +623,15 @@ function App() {
                     </div>)}
                   {deal.repairMode === "detailed" && (
                     <div>
-                      <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700 }}>{fmt(est.grand)}</div>
+                      {noScope && (
+                        <div style={{ background: "#FDF0EE", border: `2px solid ${T.red}`, borderRadius: 4, padding: "10px 12px", margin: "10px 0" }}>
+                          <div style={{ fontFamily: T.disp, fontSize: 15, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.red }}>⚠ No scope entered — repairs counting as $0</div>
+                          <div style={{ fontFamily: T.mono, fontSize: 11.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+                            Detailed mode reads the Repair Estimator, and it's empty. Every number below —
+                            profit, MAO, the verdict — is overstated by the entire cost of the rehab.<br />
+                            Add line items in the Repair Estimator, or switch to Lump Sum / $ per SF above.</div>
+                        </div>)}
+                      <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700, color: noScope ? T.red : undefined }}>{fmt(est.grand)}</div>
                       <div style={{ fontSize: 13, color: T.inkSoft, margin: "6px 0 10px" }}>
                         Pulled live from the Repair Estimator ({est.count} line items).</div>
                       <button onClick={() => setView("estimator")}
@@ -959,6 +972,15 @@ function App() {
 
         {/* ============ RIGHT: live ledger ============ */}
         <div className="no-print" style={{ flex: "0 1 340px", minWidth: 300, position: "sticky", top: 16 }}>
+          {/* The verdict is where the decision gets made, so warn here too — a
+              "clears" stamp computed on a $0 rehab is worse than no stamp at all. */}
+          {noScope && (
+            <div style={{ background: T.red, color: "#fff", borderRadius: 4, padding: "10px 12px", marginBottom: 12, textAlign: "center" }}>
+              <div style={{ fontFamily: T.disp, fontSize: 15, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>⚠ Verdict not trustworthy</div>
+              <div style={{ fontFamily: T.mono, fontSize: 11, marginTop: 3, lineHeight: 1.5 }}>
+                Repairs are $0 — the Repair Estimator is empty. Enter scope in Step 3 before believing this.</div>
+            </div>)}
+
           {/* verdict stamp */}
           {(() => {
             const vColor = calc.verdict === "clears" ? T.green : calc.verdict === "thin" ? T.amber : T.red;
