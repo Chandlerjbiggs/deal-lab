@@ -61,7 +61,7 @@ const LIB = {
     ["Masonry", [
       ["Masonry Bid Allowance","lump sum",0,0],["Brick façade, L+M","square feet",25,0],
       ["Stone façade, L+M","square feet",35,0],["Remove existing masonry","square feet",3,0],
-      ["Masonry, patch section, L+M","each",500,0],["Tuckpoint existing masonry, L+M","square feet",5.5,0],
+      ["Masonry, patch section, L+M","each",350,0],["Tuckpoint existing masonry, L+M","square feet",5.5,0],
       ["Powerwash existing masonry, L+M","square feet",0.33,0],["New fireplace/chimney, L+M","each",4000,0],
       ["Install chimney cap, L+M","each",150,0],["Chimney sweep service, L+M","each",200,0]]],
     ["Exterior Painting", [
@@ -78,7 +78,7 @@ const LIB = {
       ["Exterior door hardware, average grade","each",35,50],["Exterior door hardware, smart lock","each",50,175]]],
     ["Windows", [
       ["Windows Bid Allowance","lump sum",0,0],["Remove existing windows","each",25,0],
-      ["Vinyl Windows, single hung, average size","each",200,250],["Vinyl Windows, single hung, larger size","each",200,300],
+      ["Vinyl Windows, single hung, average size","each",175,200],["Vinyl Windows, single hung, larger size","each",200,300],
       ["Large custom windows","each",400,800],["Basement windows, operable","each",150,175],
       ["Skylights, fixed","each",150,275],["Exterior/Interior window trim","each",75,50],
       ["Repair broken window panes","each",200,0]]],
@@ -93,8 +93,8 @@ const LIB = {
       ["Garage door, double, manual operated","each",500,1200],["Garage door, custom, high end","each",500,2500],
       ["Garage door operator, builder grade","each",300,200],["Garage door operator, average","each",300,300]]],
     ["Concrete/Flatwork", [
-      ["Concrete/Asphalt Bid Allowance","lump sum",0,0],["Concrete sidewalk, L+M","square feet",12,1],
-      ["Concrete driveway, L+M","square feet",10,1],["Concrete patio, L+M","square feet",10,1],
+      ["Concrete/Asphalt Bid Allowance","lump sum",0,0],["Concrete sidewalk, L+M","square feet",8,1],
+      ["Concrete driveway, L+M","square feet",6.5,1],["Concrete patio, L+M","square feet",6.5,1],
       ["Demolition existing concrete","square feet",4,0]]],
     ["Landscaping", [
       ["Landscaping Bid/Allowance","lump sum",0,0],["Clean-up existing landscaping","lump sum",500,500],
@@ -115,7 +115,7 @@ const LIB = {
   Interiors: [
     ["Demolition", [
       ["Demolition Bid Allowance","lump sum",0,0],["Dumpster rental","each",500,0],
-      ["Demolition work per Hour","hours",35,0],["Room demolition, typical room","each",200,0],
+      ["Demolition work per Hour","hours",30,0],["Room demolition, typical room","each",200,0],
       ["Room demolition, kitchen","each",500,0],["Room demolition, bathroom","each",400,0]]],
     ["Framing", [
       ["Framing Bid Allowance","lump sum",0,0],["Interior wall framing (studs, plates), L+M","square feet",5,0],
@@ -130,7 +130,7 @@ const LIB = {
       ["Skim coating/texturing walls, L+M","square feet",1,0],["Remove popcorn ceilings & re-texture","square feet",2,0],
       ["Patch existing walls","each",100,0]]],
     ["Kitchen (Packaged)", [
-      ["New kitchen, economy (cab/counters, appliances)","lump sum",2500,7500],
+      ["New kitchen, economy (cab/counters, appliances)","lump sum",2000,6500],
       ["New kitchen, average (cab/counters, appliances)","lump sum",5000,12500],
       ["New kitchen, high-end (cab/counters, appliances)","lump sum",10000,25000],
       ["Paint existing kitchen (new counters, appliances)","lump sum",1500,3500]]],
@@ -161,13 +161,13 @@ const LIB = {
       ["Gas Range","each",0,1500],["Range Hood","each",0,500],["Microwave","each",0,250],
       ["Appliance delivery","each",75,0],["Appliance installation","each",250,0]]],
     ["Interior Doors", [
-      ["Interior Doors Bid/Allowance","lump sum",0,0],["Pre-hung, hollow-core door, 6 panel","each",85,150],
-      ["Pre-hung, hollow-core door, craftsman","each",85,175],["Pre-hung, solid-core door","each",85,250],
-      ["Interior 6 panel, sliding closet door","each",85,150],["Custom barn door","each",250,300],
-      ["Door hardware, passage","each",20,10],["Door hardware, privacy","each",20,10]]],
+      ["Interior Doors Bid/Allowance","lump sum",0,0],["Pre-hung, hollow-core door, 6 panel","each",60,150],
+      ["Pre-hung, hollow-core door, craftsman","each",60,175],["Pre-hung, solid-core door","each",60,250],
+      ["Interior 6 panel, sliding closet door","each",60,150],["Custom barn door","each",250,300],
+      ["Door hardware, passage","each",15,10],["Door hardware, privacy","each",15,10]]],
     ["Interior Woodwork", [
-      ["Wall Trim Bid/Allowance","lump sum",0,0],["Wood base, 3\"","lineal feet",3,1.5],
-      ["Wood base, 4\"","lineal feet",3,2],["Crown molding, 3\"","lineal feet",4,2.75],
+      ["Wall Trim Bid/Allowance","lump sum",0,0],["Wood base, 3\"","lineal feet",2.5,1.5],
+      ["Wood base, 4\"","lineal feet",2.5,2],["Crown molding, 3\"","lineal feet",4,2.75],
       ["Ship lap wall paneling","square feet",3,3],["Bead board wainscoting","square feet",3.5,1],
       ["Door casings","each",50,30],["Window casings and sills","each",75,40],
       ["Fireplace mantel","each",250,400],["Closet kit, per Each","each",150,300],
@@ -178,7 +178,7 @@ const LIB = {
       ["Paint kitchen cabinets, L+M","each",1250,0],["Paint vanity cabinets, L+M","each",200,0],
       ["Paint doors and door trim, L+M","each",100,0],["Paint wall base/crown molding","lineal feet",1.5,0.25]]],
     ["Carpet/Vinyl", [
-      ["Carpet Bid/Allowance","lump sum",0,0],["Carpet, average grade, L+M","square feet",2,0],
+      ["Carpet Bid/Allowance","lump sum",0,0],["Carpet, average grade, L+M","square feet",1,1.5],
       ["Carpet, premium grade, L+M","square feet",4,0],["Stair carpeting, L+M","square feet",4,0],
       ["Sheet vinyl, economy grade","square feet",2,0],["Sheet vinyl, average grade","square feet",3,0],
       ["Vinyl Tile, average grade","square feet",1,2.35]]],
@@ -189,7 +189,7 @@ const LIB = {
       ["Backerboard, 1/4\" at floor tile","square feet",1,0.75],["Backerboard, 1/2\" at wall tile","square feet",1.5,0.85]]],
     ["Hardwood Flooring", [
       ["Laminate Flooring Bid/Allowance","lump sum",0,0],["Laminate flooring, economy grade","square feet",2,1.5],
-      ["Laminate flooring, average grade","square feet",2,2.5],["Hardwood flooring, average grade","square feet",4,4],
+      ["Laminate flooring, average grade","square feet",1.75,1.6],["Hardwood flooring, average grade","square feet",4,4],
       ["Floor refinishing","square feet",2.5,0],["Lace-in new hardwood to match existing","square feet",15,0],
       ["Shoe moldings","lineal feet",0.75,0.75],["Underlayment","square feet",0.25,0.25]]],
     ["Basement", [
@@ -216,9 +216,9 @@ const LIB = {
       ["Gas hot water heater, 40 gallon","each",250,549],["New gas line","each",300,0],
       ["Main water waste line, L+M","lineal feet",75,0]]],
     ["Plumbing (Finish)", [
-      ["Kitchen faucet fixture, average grade","each",0,189],["Kitchen faucet fixture, builder grade","each",75,69.99],
+      ["Kitchen faucet fixture, average grade","each",0,189],["Kitchen faucet fixture, builder grade","each",60,69.99],
       ["Garbage disposal, average grade","each",0,155],["Hookup/install dishwasher","each",50,25],
-      ["Water supply line for refrigerator","each",50,20],["Bathroom faucet fixture, average grade","each",50,119],
+      ["Water supply line for refrigerator","each",50,20],["Bathroom faucet fixture, average grade","each",40,119],
       ["Showerhead/tub kit, average grade","each",100,200],["Fiberglass shower pan","each",250,350],
       ["Fiberglass tub, average grade","each",250,439],["Fiberglass tub/shower surround","each",300,339],
       ["Toilet, builder grade","each",125,125],["Toilet, average grade","each",125,250],
@@ -235,13 +235,13 @@ const LIB = {
       ["Electrical Rough-in Bid/Allowance","lump sum",0,0],["New electrical panel & wiring throughout","square feet",4,0],
       ["Electrical rough-in, per hour, L+M","hours",65,0],["Upgrade service to 100 AMP, L+M","each",1250,0],
       ["Upgrade service to 200 AMP, L+M","each",1750,0],["Add New Outlet, L+M","each",100,0],
-      ["Add New Circuit, L+M","each",200,0],["Convert outlet to GFCI, L+M","each",50,25]]],
+      ["Add New Circuit, L+M","each",200,0],["Convert outlet to GFCI, L+M","each",35,25]]],
     ["Electrical (Finish)", [
-      ["Ceiling dome light fixture","each",50,25],["Ceiling fan fixture, average grade","each",75,100],
-      ["Ceiling fan fixture, high end","each",75,250],["Can lighting","each",75,40],
+      ["Ceiling dome light fixture","each",40,25],["Ceiling fan fixture, average grade","each",65,100],
+      ["Ceiling fan fixture, high end","each",65,250],["Can lighting","each",75,40],
       ["Track/pendant light fixture","each",50,150],["Chandelier light fixture","each",100,200],
       ["Exterior wall light fixture","each",50,75],["Outdoor landscaping lighting","each",50,75],
-      ["Exhaust fan","each",50,50],["Smoke detectors","each",50,15],["Carbon monoxide detectors","each",50,25]]],
+      ["Exhaust fan","each",50,50],["Smoke detectors","each",25,15],["Carbon monoxide detectors","each",25,25]]],
     ["Septic System", [
       ["Septic System Bid/Allowance","lump sum",0,0],["Complete septic system, L+M","each",15000,0],
       ["Replace/install septic tank only, L+M","each",4000,0],["Install septic leaching field only, L+M","each",10000,0],
@@ -249,8 +249,8 @@ const LIB = {
   ],
   Other: [
     ["General Conditions", [
-      ["General Conditions Bid/Allowance","lump sum",0,0],["Dumpster rental","each",500,0],
-      ["Storage container","job",500,0],["Temporary toilet","each",85,0],["Miscellaneous tools","each",250,0]]],
+      ["General Conditions Bid/Allowance","lump sum",0,0],["Project Manager fee (if not self-managing)","lump sum",7500,0],
+      ["Dumpster rental","each",500,0],["Storage container","job",500,0],["Temporary toilet","each",85,0],["Miscellaneous tools","each",250,0]]],
     ["Architectural/Engineering", [
       ["Architectural/Engineering Allowance","lump sum",0,0],["Architectural design fees, per Hour","hours",50,0],
       ["Structural engineering inspection","lump sum",400,0],["Structural engineering design fees, per Hour","hours",50,0]]],
