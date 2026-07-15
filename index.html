@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>River Forged Deal Lab</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128296;</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>body{margin:0}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const storageShim = {
+  async get(key) { const v = localStorage.getItem(key); return v === null ? null : { key, value: v }; },
+  async set(key, value) { localStorage.setItem(key, value); return { key, value }; },
+  async delete(key) { localStorage.removeItem(key); return { key, deleted: true }; },
+};
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+/* ============ RIVER FORGED DEAL LAB ============
+   Flip Analyzer + Repair Estimator
+   Replicates FlipperForce math, verified against
+   312 Beverly St packet + 123 West Main St demo.
+================================================= */
+
+const T = {
+  ink: "#2C3E50", inkSoft: "#5D6D7E", paper: "#EEF2F5", panel: "#FFFFFF",
+  line: "#DDE4EA", teal: "#2E86DE", tealDark: "#2372C8",
+  green: "#2FB380", red: "#C0392B", amber: "#E67E22",
+  mono: "'IBM Plex Mono','SFMono-Regular',Consolas,monospace",
+  disp: "'Barlow Condensed','Arial Narrow',sans-serif",
+  body: "'Inter',system-ui,sans-serif",
+};
+
+const fmt = (n, d = 0) =>
+  (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (n, d = 1) => (isFinite(n) ? (n * 100).toFixed(d) + "%" : "—");
+const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+
+/* ---------- REPAIR ITEM LIBRARY (FlipperForce defaults) ----------
+   [description, unit, laborPrice, materialPrice] */
+const LIB = {
+  Exteriors: [
+    ["Roofing", [
+      ["Roofing Bid Allowance","lump sum",0,0],["Asphalt roofing, 3 tab, L+M","squares",350,0],
+      ["Asphalt roofing, architectural, L+M","squares",400,0],["Remove existing roofing, L+M","squares",30,0],
+      ["Roofing, patch section, L+M","each",400,0],["Plywood roof sheathing, L+M","sheet",80,0],
+      ["Gutter replacement, L+M","lineal feet",12,0],["Fascia board, L+M","lineal feet",12,0],["12\" Soffit board, L+M","lineal feet",12,0]]],
+    ["Siding", [
+      ["Siding Bid Allowance","lump sum",0,0],["Vinyl siding, L+M","square feet",3,0],
+      ["Wood lap siding, L+M","square feet",5,0],["Wood shingle siding, L+M","square feet",7,0],
+      ["Fiber cement shingles, L+M","square feet",7,0],["Metal lap siding, L+M","square feet",6,0],
+      ["Stucco siding, L+M","square feet",8,0],["Powerwash existing siding, whole house","lump sum",400,0],
+      ["Siding, patching and repairs, L+M","each",500,0],["Soffit/Fascia board, L+M","lineal feet",12,0],
+      ["Door trim kit, L+M","each",100,0],["Window trim kit, L+M","each",100,0]]],
+    ["Masonry", [
+      ["Masonry Bid Allowance","lump sum",0,0],["Brick façade, L+M","square feet",25,0],
+      ["Stone façade, L+M","square feet",35,0],["Remove existing masonry","square feet",3,0],
+      ["Masonry, patch section, L+M","each",500,0],["Tuckpoint existing masonry, L+M","square feet",5.5,0],
+      ["Powerwash existing masonry, L+M","square feet",0.33,0],["New fireplace/chimney, L+M","each",4000,0],
+      ["Install chimney cap, L+M","each",150,0],["Chimney sweep service, L+M","each",200,0]]],
+    ["Exterior Painting", [
+      ["Exterior Painting Bid Allowance","lump sum",0,0],["Exterior Painting by Property SF, L+M","square feet",3,0],
+      ["Exterior Painting by Siding SF, L+M","square feet",1.75,0],["Powerwash, siding, L+M","square feet",0.5,0],
+      ["Paint exterior doors, L+M","each",100,0],["Paint exterior trim boards, L+M","lineal feet",2,0],
+      ["Powerwash, sand, refinish deck, L+M","square feet",3,0],["Paint/stain fencing, L+M","square feet",2,0],
+      ["Paint detached structures, L+M","each",1000,0]]],
+    ["Exterior Doors", [
+      ["Exterior Doors Bid Allowance","lump sum",0,0],["Demolish existing doors","each",35,0],
+      ["Exterior steel entry door, w/ door lite, single","each",200,325],["Exterior steel entry door, single","each",200,325],
+      ["Exterior wood entry door, single","each",200,850],["French patio door","each",300,750],
+      ["Sliding glass patio door","each",300,500],["Exterior glass storm door","each",100,275],
+      ["Exterior door hardware, average grade","each",35,50],["Exterior door hardware, smart lock","each",50,175]]],
+    ["Windows", [
+      ["Windows Bid Allowance","lump sum",0,0],["Remove existing windows","each",25,0],
+      ["Vinyl Windows, single hung, average size","each",200,250],["Vinyl Windows, single hung, larger size","each",200,300],
+      ["Large custom windows","each",400,800],["Basement windows, operable","each",150,175],
+      ["Skylights, fixed","each",150,275],["Exterior/Interior window trim","each",75,50],
+      ["Repair broken window panes","each",200,0]]],
+    ["Decks/Porches", [
+      ["Decks/Porches Bid Allowance","lump sum",0,0],["Pressure-treated deck (joists, decking, rails)","square feet",40,0],
+      ["Wood cedar deck (joists, decking, rails)","square feet",50,0],["Composite deck (joists, decking, rails)","square feet",60,0],
+      ["Demolish existing deck","each",500,0],["Powerwash deck, stain and seal, L+M","square feet",1.5,0],
+      ["Replace existing deck boards only, wood","square feet",10,0],["Replace rails, spindles only, wood, L+M","lineal feet",40,0],
+      ["Wood stair case, 6 steps, L+M","each",1000,0],["Concrete landing pad for stairs, L+M","each",400,0]]],
+    ["Garage", [
+      ["Garage Bid Allowance","lump sum",0,0],["Garage door, single, manual operated","each",350,750],
+      ["Garage door, double, manual operated","each",500,1200],["Garage door, custom, high end","each",500,2500],
+      ["Garage door operator, builder grade","each",300,200],["Garage door operator, average","each",300,300]]],
+    ["Concrete/Flatwork", [
+      ["Concrete/Asphalt Bid Allowance","lump sum",0,0],["Concrete sidewalk, L+M","square feet",12,1],
+      ["Concrete driveway, L+M","square feet",10,1],["Concrete patio, L+M","square feet",10,1],
+      ["Demolition existing concrete","square feet",4,0]]],
+    ["Landscaping", [
+      ["Landscaping Bid/Allowance","lump sum",0,0],["Clean-up existing landscaping","lump sum",500,500],
+      ["Front yard, landscaping package","lump sum",1000,2000],["Entire lot, landscaping package","lump sum",15000,3500],
+      ["Sodding, L+M","square feet",1.25,0],["Seeding, entire yard, L+M","square feet",0.25,0],
+      ["Shrubs, 1 gallon","each",10,30],["Shrubs, 5 gallon","each",35,50],["Small trees","each",50,50],
+      ["Mulch beds","square feet",0.25,0.5],["Landscape rock","square feet",0.5,2],
+      ["Lawn mowing/maintenance","month",100,0],["Tree trimming, per tree","each",150,0],["Tree removal","each",750,0]]],
+    ["Fencing", [
+      ["Fencing Bid/Allowance","lump sum",0,0],["Remove existing fencing, L+M","lineal feet",3,0],
+      ["Chain link fencing, L+M","lineal feet",15,0],["Wood fencing, L+M","lineal feet",25,0],
+      ["Vinyl fencing, L+M","lineal feet",25,0],["Aluminum fencing, L+M","lineal feet",35,0],
+      ["Wrought iron fencing, L+M","lineal feet",50,0],["Fence gates","each",500,0]]],
+    ["Misc Exterior Items", [
+      ["Misc Exterior Items Bid Allowance","lump sum",0,0],["New wood shutters","each",50,100],
+      ["New mailbox","each",150,250],["New address numbers","each",50,30],["New plastic shutters","each",35,50]]],
+  ],
+  Interiors: [
+    ["Demolition", [
+      ["Demolition Bid Allowance","lump sum",0,0],["Dumpster rental","each",500,0],
+      ["Demolition work per Hour","hours",35,0],["Room demolition, typical room","each",200,0],
+      ["Room demolition, kitchen","each",500,0],["Room demolition, bathroom","each",400,0]]],
+    ["Framing", [
+      ["Framing Bid Allowance","lump sum",0,0],["Interior wall framing (studs, plates), L+M","square feet",5,0],
+      ["Load bearing structural beam, L+M","each",2500,0],["Replace/install subflooring, L+M","sheet",60,0],
+      ["Flooring framing assembly (joists, sheathing)","square feet",10,0]]],
+    ["Insulation", [
+      ["Insulation Bid/Allowance","lump sum",0,0],["Wall insulation, L+M","square feet",1,0],
+      ["Floor insulation, L+M","square feet",1.5,0],["Attic blown-in insulation, L+M","square feet",2,0]]],
+    ["Drywall", [
+      ["Drywall Bid/Allowance","lump sum",0,0],["Drywall wallboard, taped & finished, L+M","square feet",3,0],
+      ["Drywall partition, stud + drywall one side","square feet",7,0],["Drywall partition, stud + drywall both sides","square feet",10,0],
+      ["Skim coating/texturing walls, L+M","square feet",1,0],["Remove popcorn ceilings & re-texture","square feet",2,0],
+      ["Patch existing walls","each",100,0]]],
+    ["Kitchen (Packaged)", [
+      ["New kitchen, economy (cab/counters, appliances)","lump sum",2500,7500],
+      ["New kitchen, average (cab/counters, appliances)","lump sum",5000,12500],
+      ["New kitchen, high-end (cab/counters, appliances)","lump sum",10000,25000],
+      ["Paint existing kitchen (new counters, appliances)","lump sum",1500,3500]]],
+    ["Bathrooms (Packaged)", [
+      ["Full bath, light remodel (re-use tub/shower)","each",1000,500],
+      ["Full bathroom, average (complete renovation)","each",3000,2500],
+      ["Full bathroom, high end (complete renovation)","each",5000,5000],
+      ["Half bath, light remodel (re-use fixtures)","each",500,500],
+      ["Half bath, average remodel (new fixtures)","each",1000,1000]]],
+    ["Kitchen Cabinetry", [
+      ["Cabinetry Bid/Allowance","lump sum",0,0],["Kitchen base cabinetry, average grade","lineal feet",40,125],
+      ["Kitchen upper cabinetry, average grade","lineal feet",50,100],["Kitchen pantry cabinetry, 24\"","each",150,800],
+      ["Replace cabinet doors only","each",25,50],["Cabinet door pulls","each",5,5]]],
+    ["Vanity Cabinetry", [
+      ["Vanity cabinet, 30\" builder grade","each",150,179],["Vanity cabinet, 30\", average grade","each",150,425],
+      ["Vanity cabinet, 48\", average grade","each",150,650],["Vanity cabinet, 48\" luxury grade","each",250,1000],
+      ["Vanity cabinet, double, luxury grade","each",250,1500]]],
+    ["Countertops", [
+      ["Countertops Bid/Allowance","lump sum",0,0],["Stone countertops, low end, L+M","square feet",0,45],
+      ["Stone countertops, high end, L+M","square feet",0,70],["Plastic laminate countertops, L+M","square feet",0,20],
+      ["Vanity countertop, per SF","square feet",40,0],["Vanity countertop, per Each","each",250,0],
+      ["Kitchen stainless steel sink bowl, average","each",100,300],["Kitchen farmhouse sink bowl","each",150,500],
+      ["Bathroom undermount sink bowl","each",100,100]]],
+    ["Appliances", [
+      ["Appliance Bid/Allowance","lump sum",0,0],["Appliance package, economy","lump sum",0,2500],
+      ["Appliance package, average","lump sum",0,3000],["Appliance package, high-end","lump sum",0,10000],
+      ["Refrigerator","each",0,2000],["Dishwasher","each",0,750],["Electric Range","each",0,1000],
+      ["Gas Range","each",0,1500],["Range Hood","each",0,500],["Microwave","each",0,250],
+      ["Appliance delivery","each",75,0],["Appliance installation","each",250,0]]],
+    ["Interior Doors", [
+      ["Interior Doors Bid/Allowance","lump sum",0,0],["Pre-hung, hollow-core door, 6 panel","each",85,150],
+      ["Pre-hung, hollow-core door, craftsman","each",85,175],["Pre-hung, solid-core door","each",85,250],
+      ["Interior 6 panel, sliding closet door","each",85,150],["Custom barn door","each",250,300],
+      ["Door hardware, passage","each",20,10],["Door hardware, privacy","each",20,10]]],
+    ["Interior Woodwork", [
+      ["Wall Trim Bid/Allowance","lump sum",0,0],["Wood base, 3\"","lineal feet",3,1.5],
+      ["Wood base, 4\"","lineal feet",3,2],["Crown molding, 3\"","lineal feet",4,2.75],
+      ["Ship lap wall paneling","square feet",3,3],["Bead board wainscoting","square feet",3.5,1],
+      ["Door casings","each",50,30],["Window casings and sills","each",75,40],
+      ["Fireplace mantel","each",250,400],["Closet kit, per Each","each",150,300],
+      ["Closet shelf and rod kit, per LF","lineal feet",15,30]]],
+    ["Interior Painting", [
+      ["Interior Painting Bid/Allowance","lump sum",0,0],["Interior painting (walls/ceilings) per Property SF, L+M","square feet",2.25,0],
+      ["Paint interior walls, L+M","square feet",1,0],["Paint ceilings, L+M","square feet",1,0],
+      ["Paint kitchen cabinets, L+M","each",1250,0],["Paint vanity cabinets, L+M","each",200,0],
+      ["Paint doors and door trim, L+M","each",100,0],["Paint wall base/crown molding","lineal feet",1.5,0.25]]],
+    ["Carpet/Vinyl", [
+      ["Carpet Bid/Allowance","lump sum",0,0],["Carpet, average grade, L+M","square feet",2,0],
+      ["Carpet, premium grade, L+M","square feet",4,0],["Stair carpeting, L+M","square feet",4,0],
+      ["Sheet vinyl, economy grade","square feet",2,0],["Sheet vinyl, average grade","square feet",3,0],
+      ["Vinyl Tile, average grade","square feet",1,2.35]]],
+    ["Tiling", [
+      ["Floor Tile/Bid Allowance","lump sum",0,0],["Floor tile, economy grade","square feet",4,1.5],
+      ["Floor tile, average grade","square feet",4,3],["Shower tile, average grade","square feet",4,3],
+      ["Shower tile, accent tile","square feet",10,15],["Kitchen backsplash tile","square feet",10,15],
+      ["Backerboard, 1/4\" at floor tile","square feet",1,0.75],["Backerboard, 1/2\" at wall tile","square feet",1.5,0.85]]],
+    ["Hardwood Flooring", [
+      ["Laminate Flooring Bid/Allowance","lump sum",0,0],["Laminate flooring, economy grade","square feet",2,1.5],
+      ["Laminate flooring, average grade","square feet",2,2.5],["Hardwood flooring, average grade","square feet",4,4],
+      ["Floor refinishing","square feet",2.5,0],["Lace-in new hardwood to match existing","square feet",15,0],
+      ["Shoe moldings","lineal feet",0.75,0.75],["Underlayment","square feet",0.25,0.25]]],
+    ["Basement", [
+      ["Basement Bid/Allowance","lump sum",0,0],["Finish existing basement (framing/drywall)","square feet",35,0],
+      ["Install waterproofing/sump pump system","lineal feet",100,0]]],
+    ["Laundry", [
+      ["Washer, average grade","each",75,1000],["Dryer, average grade","each",75,1000],
+      ["Washer, builder grade","each",75,500],["Dryer, builder grade","each",75,500]]],
+    ["Foundations", [
+      ["Foundation Bid/Allowance","lump sum",0,0],["New concrete footings, L+M","lineal feet",20,0],
+      ["New slab-on-grade, 4\" thick, L+M","square feet",4,0],["Foundation waterproofing, drain tile & sump","lineal feet",175,0],
+      ["Bowing walls, install vertical steel I-beam","each",900,0],["Settled foundation, concrete piers/underpin","each",1200,0],
+      ["Epoxy crack injection, per LF of crack","lineal feet",75,0]]],
+    ["Remediation/Abatement", [
+      ["Remediation/Abatement Bid/Allowance","lump sum",0,0],["Lead paint testing","each",350,0],
+      ["Lead paint encapsulation","square feet",0.75,0],["Asbestos testing","each",500,0],
+      ["Mold testing","each",350,0],["Mold abatement","lump sum",0,0]]],
+  ],
+  MEP: [
+    ["Plumbing (Rough-In)", [
+      ["Plumbing Rough-in Bid/Allowance","each",0,0],["New plumbing rough-in (entire property)","square feet",3,0],
+      ["New plumbing rough-in for kitchen, L+M","each",750,0],["New plumbing rough-in for bathroom, L+M","each",750,0],
+      ["Plumbing rough-in, per Hour","hours",65,0],["Electric hot water heater, 40 gallon","each",250,439],
+      ["Gas hot water heater, 40 gallon","each",250,549],["New gas line","each",300,0],
+      ["Main water waste line, L+M","lineal feet",75,0]]],
+    ["Plumbing (Finish)", [
+      ["Kitchen faucet fixture, average grade","each",0,189],["Kitchen faucet fixture, builder grade","each",75,69.99],
+      ["Garbage disposal, average grade","each",0,155],["Hookup/install dishwasher","each",50,25],
+      ["Water supply line for refrigerator","each",50,20],["Bathroom faucet fixture, average grade","each",50,119],
+      ["Showerhead/tub kit, average grade","each",100,200],["Fiberglass shower pan","each",250,350],
+      ["Fiberglass tub, average grade","each",250,439],["Fiberglass tub/shower surround","each",300,339],
+      ["Toilet, builder grade","each",125,125],["Toilet, average grade","each",125,250],
+      ["Fix leak","each",250,0],["Exterior hose bibb","each",100,50]]],
+    ["HVAC (Rough-in/Equip)", [
+      ["HVAC Bid/Allowance","lump sum",0,0],["HVAC rough-in work, per hour","hours",65,0],
+      ["Gas fired furnace, 1000sf 60-80K btus, L+M","each",2000,0],["Gas fired furnace, 2000sf 80k-100k btus","each",3500,0],
+      ["Air conditioning unit, 1000sf, 2.0-3.0 ton","each",2500,0],["Air conditioning unit, 2000sf, 3.0-3.5 ton","each",3500,0],
+      ["Window AC unit, L+M","each",250,0],["HVAC equipment tune-up/service call","lump sum",150,0],
+      ["Clean ductwork","lump sum",250,0]]],
+    ["HVAC (Finish)", [
+      ["Programmable thermostat","each",50,75],["Replace supply air grilles/returns","each",15,20]]],
+    ["Electrical (Rough-In)", [
+      ["Electrical Rough-in Bid/Allowance","lump sum",0,0],["New electrical panel & wiring throughout","square feet",4,0],
+      ["Electrical rough-in, per hour, L+M","hours",65,0],["Upgrade service to 100 AMP, L+M","each",1250,0],
+      ["Upgrade service to 200 AMP, L+M","each",1750,0],["Add New Outlet, L+M","each",100,0],
+      ["Add New Circuit, L+M","each",200,0],["Convert outlet to GFCI, L+M","each",50,25]]],
+    ["Electrical (Finish)", [
+      ["Ceiling dome light fixture","each",50,25],["Ceiling fan fixture, average grade","each",75,100],
+      ["Ceiling fan fixture, high end","each",75,250],["Can lighting","each",75,40],
+      ["Track/pendant light fixture","each",50,150],["Chandelier light fixture","each",100,200],
+      ["Exterior wall light fixture","each",50,75],["Outdoor landscaping lighting","each",50,75],
+      ["Exhaust fan","each",50,50],["Smoke detectors","each",50,15],["Carbon monoxide detectors","each",50,25]]],
+    ["Septic System", [
+      ["Septic System Bid/Allowance","lump sum",0,0],["Complete septic system, L+M","each",15000,0],
+      ["Replace/install septic tank only, L+M","each",4000,0],["Install septic leaching field only, L+M","each",10000,0],
+      ["Inspect/clean septic tank","each",500,0]]],
+  ],
+  Other: [
+    ["General Conditions", [
+      ["General Conditions Bid/Allowance","lump sum",0,0],["Dumpster rental","each",500,0],
+      ["Storage container","job",500,0],["Temporary toilet","each",85,0],["Miscellaneous tools","each",250,0]]],
+    ["Architectural/Engineering", [
+      ["Architectural/Engineering Allowance","lump sum",0,0],["Architectural design fees, per Hour","hours",50,0],
+      ["Structural engineering inspection","lump sum",400,0],["Structural engineering design fees, per Hour","hours",50,0]]],
+    ["Building Permits", [
+      ["Building Permits Allowance","lump sum",0,0],["Overall Building Permit","lump sum",500,0],
+      ["Demolition Permit","lump sum",0,0],["Plumbing Permit","lump sum",0,0],
+      ["HVAC Permit","lump sum",0,0],["Electrical Permit","lump sum",0,0]]],
+  ],
+};
+
+/* Build initial estimator rows */
+let rid = 0;
+const buildRows = () => {
+  const rows = [];
+  Object.entries(LIB).forEach(([tab, cats]) =>
+    cats.forEach(([cat, items]) =>
+      items.forEach(([desc, unit, labor, material]) =>
+        rows.push({ id: ++rid, tab, cat, desc, unit, qty: 0, labor, material, custom: false }))));
+  return rows;
+};
+
+const DEFAULT_DEAL = {
+  name: "", address: "", arv: 250000, sqft: 1200, purchase: 122000,
+  repairMode: "psf", repairLump: 0, repairPSF: 35,
+  buyMode: "pct", buyPct: 2, buyLump: 0,
+  renoMonths: 4, salesMonths: 2,
+  holdMode: "permonth", holdPerMonth: 450, holdLump: 0,
+  sellMode: "pct", sellPct: 6, sellLump: 0,
+  finStrategy: "loan", loanBasis: "both", loanLump: 0,
+  ltvP: 100, ltvR: 100, ltvArv: 70,
+  rate: 12, finMonthsAuto: true, finMonths: 6, points: 2, otherPct: 0,
+  interestSchedule: "full",
+  profitMode: "pct", profitPct: 20, profitLump: 50000,
+};
+
+const RF_PRESET = { ...{
+  name: "", address: "", arv: 0, sqft: 0, purchase: 0,
+  repairMode: "lump", repairLump: 0, repairPSF: 35,
+  buyMode: "pct", buyPct: 2, buyLump: 0,
+  renoMonths: 4, salesMonths: 2,
+  holdMode: "permonth", holdPerMonth: 450, holdLump: 0,
+  sellMode: "pct", sellPct: 6, sellLump: 0,
+  finStrategy: "loan", loanBasis: "both", loanLump: 0,
+  ltvP: 100, ltvR: 100, ltvArv: 70,
+  rate: 12, finMonthsAuto: true, finMonths: 6, points: 0, otherPct: 0,
+  interestSchedule: "holdback",
+  profitMode: "lump", profitPct: 20, profitLump: 50000,
+} };
+
+/* ---------- shared UI bits ---------- */
+const Lbl = ({ children }) => (
+  <div style={{ fontFamily: T.disp, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: T.inkSoft, marginBottom: 4, fontWeight: 600 }}>{children}</div>
+);
+const Inp = ({ value, onChange, prefix, suffix, w = "100%", disabled }) => (
+  <div style={{ display: "flex", alignItems: "center", border: `1px solid ${T.line}`, background: disabled ? "#EEF1F0" : "#fff", width: w, borderRadius: 3 }}>
+    {prefix && <span style={{ padding: "0 8px", color: T.inkSoft, fontFamily: T.mono, fontSize: 13, borderRight: `1px solid ${T.line}` }}>{prefix}</span>}
+    <input type="number" step="any" value={value} disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ flex: 1, minWidth: 0, border: "none", outline: "none", padding: "8px 10px", fontFamily: T.mono, fontSize: 14, color: T.ink, background: "transparent" }} />
+    {suffix && <span style={{ padding: "0 8px", color: T.inkSoft, fontFamily: T.mono, fontSize: 13, borderLeft: `1px solid ${T.line}` }}>{suffix}</span>}
+  </div>
+);
+const Toggle = ({ options, value, onChange }) => (
+  <div style={{ display: "inline-flex", border: `1px solid ${T.line}`, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
+    {options.map(([k, label]) => (
+      <button key={k} onClick={() => onChange(k)}
+        style={{ padding: "6px 14px", fontSize: 12, fontFamily: T.disp, letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, cursor: "pointer",
+          border: "none", borderRight: `1px solid ${T.line}`,
+          background: value === k ? T.teal : "#fff", color: value === k ? "#fff" : T.inkSoft }}>{label}</button>
+    ))}
+  </div>
+);
+const Card = ({ title, children, right }) => (
+  <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 4, padding: 18, marginBottom: 14 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, borderBottom: `2px solid ${T.ink}`, paddingBottom: 8 }}>
+      <div style={{ fontFamily: T.disp, fontSize: 17, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: T.ink }}>{title}</div>
+      {right}
+    </div>
+    {children}
+  </div>
+);
+const Row = ({ label, val, bold, color, indent, sub }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", padding: sub ? "3px 0" : "6px 0",
+    borderBottom: bold ? "none" : `1px solid ${T.line}`, borderTop: bold ? `2px solid ${T.ink}` : "none",
+    paddingLeft: indent ? 14 : 0 }}>
+    <span style={{ fontSize: sub ? 12 : 13.5, color: bold ? T.ink : T.inkSoft, fontWeight: bold ? 700 : 400, fontFamily: T.body }}>{label}</span>
+    <span style={{ fontFamily: T.mono, fontSize: sub ? 12 : 13.5, fontWeight: bold ? 700 : 500, color: color || T.ink }}>{val}</span>
+  </div>
+);
+
+/* ================= MAIN APP ================= */
+function App() {
+  const [view, setView] = useState("analyzer");
+  const [step, setStep] = useState(0);
+  const [deal, setDeal] = useState({ ...DEFAULT_DEAL });
+  const [rows, setRows] = useState(buildRows);
+  const [adders, setAdders] = useState({ location: 0, contingency: 0, ohp: 0, laborTax: 0, matTax: 0 });
+  const [estTab, setEstTab] = useState("Exteriors");
+  const [openCats, setOpenCats] = useState({});
+  const [saved, setSaved] = useState([]);
+  const [saveName, setSaveName] = useState("");
+  const [importText, setImportText] = useState("");
+  const [toast, setToast] = useState("");
+
+  const D = (k, v) => setDeal((d) => ({ ...d, [k]: v }));
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2500); };
+
+  /* ---- estimator math ---- */
+  const est = useMemo(() => {
+    const active = rows.filter((r) => num(r.qty) > 0);
+    const labor = active.reduce((s, r) => s + num(r.qty) * num(r.labor), 0);
+    const material = active.reduce((s, r) => s + num(r.qty) * num(r.material), 0);
+    const subtotal = labor + material;
+    const adderAmt = subtotal * (num(adders.location) + num(adders.contingency) + num(adders.ohp)) / 100
+      + labor * num(adders.laborTax) / 100 + material * num(adders.matTax) / 100;
+    const byTab = {};
+    Object.keys(LIB).forEach((t) => {
+      const a = active.filter((r) => r.tab === t);
+      byTab[t] = { labor: a.reduce((s, r) => s + num(r.qty) * num(r.labor), 0), material: a.reduce((s, r) => s + num(r.qty) * num(r.material), 0) };
+    });
+    return { labor, material, subtotal, adderAmt, grand: subtotal + adderAmt, byTab, count: active.length };
+  }, [rows, adders]);
+
+  /* ---- analyzer math ---- */
+  const calc = useMemo(() => {
+    const arv = num(deal.arv), purchase = num(deal.purchase), sqft = num(deal.sqft);
+    const repair = deal.repairMode === "lump" ? num(deal.repairLump)
+      : deal.repairMode === "psf" ? num(deal.repairPSF) * sqft : est.grand;
+    const holdMonths = num(deal.renoMonths) + num(deal.salesMonths);
+
+    const costsFor = (p, A = arv, R = repair, HM = holdMonths, RM = num(deal.renoMonths)) => {
+      const buying = deal.buyMode === "pct" ? p * num(deal.buyPct) / 100 : num(deal.buyLump);
+      const holding = deal.holdMode === "permonth" ? num(deal.holdPerMonth) * HM : num(deal.holdLump);
+      const selling = deal.sellMode === "pct" ? A * num(deal.sellPct) / 100 : num(deal.sellLump);
+      let loanP = 0, loanR = 0, loan = 0;
+      if (deal.finStrategy === "loan") {
+        if (deal.loanBasis === "lump") loan = num(deal.loanLump);
+        else if (deal.loanBasis === "purchase") { loanP = p * num(deal.ltvP) / 100; loan = loanP; }
+        else if (deal.loanBasis === "repairs") { loanR = R * num(deal.ltvR) / 100; loan = loanR; }
+        else if (deal.loanBasis === "both") { loanP = p * num(deal.ltvP) / 100; loanR = R * num(deal.ltvR) / 100; loan = loanP + loanR; }
+        else if (deal.loanBasis === "arv") loan = A * num(deal.ltvArv) / 100;
+      }
+      const mRate = num(deal.rate) / 100 / 12;
+      const finMonths = deal.finMonthsAuto ? HM : num(deal.finMonths) + Math.max(0, HM - holdMonths);
+      let interest = 0;
+      if (deal.finStrategy === "loan") {
+        if (deal.interestSchedule === "holdback" && deal.loanBasis === "both") {
+          interest = loanP * mRate * finMonths + loanR * mRate * (RM / 2 + (HM - RM));
+        } else interest = loan * mRate * finMonths;
+      }
+      const pts = deal.finStrategy === "loan" ? loan * num(deal.points) / 100 : 0;
+      const other = deal.finStrategy === "loan" ? loan * num(deal.otherPct) / 100 : 0;
+      const financing = interest + pts + other;
+      return { buying, holding, selling, financing, interest, pts, other, loan,
+        monthly: deal.finStrategy === "loan" ? loan * mRate : 0 };
+    };
+
+    const c = costsFor(purchase);
+    const profit = arv - purchase - repair - c.buying - c.holding - c.selling - c.financing;
+    const allCosts = purchase + repair + c.buying + c.holding + c.selling + c.financing;
+    const upfront = purchase + repair + c.buying + c.holding + c.interest + c.pts + c.other;
+    const cashNeeded = Math.max(upfront - c.loan, 0);
+    const cocr = cashNeeded > 0 ? profit / cashNeeded : Infinity;
+    const annCocr = holdMonths > 0 ? cocr * 12 / holdMonths : 0;
+    const rule70 = arv > 0 ? (purchase + repair) / arv : 0;
+
+    /* MAO: iteratively solve purchase so profit == desired (recalcs %-of-purchase buying + loan costs) */
+    const desired = deal.profitMode === "pct" ? arv * num(deal.profitPct) / 100 : num(deal.profitLump);
+    let mao = purchase;
+    for (let i = 0; i < 25; i++) {
+      const k = costsFor(mao);
+      mao = arv - desired - repair - k.buying - k.holding - k.selling - k.financing;
+    }
+
+    /* FlipperForce-style MPP: costs held at current purchase price (matches their report) */
+    const mppStatic = arv - desired - repair - c.buying - c.holding - c.selling - c.financing;
+
+    /* Floor logic (Chandler's rule):
+       Base target = greater of $50K or 20% of ARV — the deal must clear this as analyzed.
+       Storm floor = walk-away when everything runs over. $35K normally, but $50K if
+       all-in (purchase + rehab) tops $250K, since hard money gets expensive fast on
+       bigger deals and the cushion has to be bigger. */
+    const allIn = purchase + repair;
+    const baseTarget = Math.max(50000, 0.2 * arv);
+    const stormFloor = allIn > 250000 ? 50000 : 35000;
+
+    const profitAt = (A, R, HM, RM) => { const k = costsFor(purchase, A, R, HM, RM); return A - purchase - R - k.buying - k.holding - k.selling - k.financing; };
+    const rm0 = num(deal.renoMonths);
+    const stress = [
+      { name: "Base case", profit: profitAt(arv, repair, holdMonths, rm0), floor: baseTarget },
+      { name: "ARV drops 5%", profit: profitAt(arv * 0.95, repair, holdMonths, rm0), floor: stormFloor },
+      { name: "Rehab runs 15% over", profit: profitAt(arv, repair * 1.15, holdMonths, rm0), floor: stormFloor },
+      { name: "Timeline slips 2 months", profit: profitAt(arv, repair, holdMonths + 2, rm0 + 2), floor: stormFloor },
+      { name: "Perfect storm (all three)", profit: profitAt(arv * 0.95, repair * 1.15, holdMonths + 2, rm0 + 2), floor: stormFloor },
+    ].map((s) => ({ ...s, passes: s.profit >= s.floor }));
+
+    /* RF rule: every $1K rehab ≈ 1 work day (~21 work days/month) */
+    const rehabDays = Math.round(repair / 1000);
+    const suggReno = repair > 0 ? Math.max(0.5, Math.ceil((rehabDays / 21) * 2) / 2) : 0;
+
+    const basePass = profit >= baseTarget;
+    const stormPass = stress[4].profit >= stormFloor;
+    const verdict = !basePass ? "below" : (stormPass ? "clears" : "thin");
+    const passes = basePass; /* legacy alias */
+    return { arv, purchase, repair, holdMonths, ...c, profit, allCosts, cashNeeded, cocr, annCocr, rule70, mao, mppStatic, desired, passes, baseTarget, stormFloor, allIn, basePass, stormPass, verdict, stress, rehabDays, suggReno };
+  }, [deal, est]);
+
+  /* ---- persistence ---- */
+  const refreshSaved = async () => {
+    try { const r = await storageShim.get("rf-deals"); setSaved(r ? JSON.parse(r.value) : []); }
+    catch { setSaved([]); }
+  };
+  useEffect(() => { refreshSaved(); }, []);
+
+  const saveDeal = async () => {
+    const name = saveName.trim() || deal.address.trim() || "Untitled deal";
+    try {
+      let list = [];
+      try { const r = await storageShim.get("rf-deals"); list = r ? JSON.parse(r.value) : []; } catch {}
+      const payload = { name, savedAt: new Date().toISOString(), deal, adders,
+        estRows: rows.filter((r) => num(r.qty) > 0 || r.custom).map(({ id, ...rest }) => rest) };
+      const idx = list.findIndex((x) => x.name === name);
+      if (idx >= 0) list[idx] = payload; else list.push(payload);
+      await storageShim.set("rf-deals", JSON.stringify(list));
+      setSaved(list); flash(`Saved "${name}"`);
+    } catch { flash("Save failed — storage unavailable"); }
+  };
+  const loadDeal = (p) => {
+    setDeal({ ...DEFAULT_DEAL, ...p.deal });
+    setAdders({ location: 0, contingency: 0, ohp: 0, laborTax: 0, matTax: 0, ...p.adders });
+    const base = buildRows();
+    (p.estRows || []).forEach((s) => {
+      const m = base.find((b) => b.tab === s.tab && b.cat === s.cat && b.desc === s.desc);
+      if (m) { m.qty = s.qty; m.labor = s.labor; m.material = s.material; }
+      else base.push({ ...s, id: ++rid });
+    });
+    setRows(base); setView("analyzer"); setStep(0); flash(`Loaded "${p.name}"`);
+  };
+  const deleteDeal = async (name) => {
+    try {
+      const list = saved.filter((x) => x.name !== name);
+      await storageShim.set("rf-deals", JSON.stringify(list));
+      setSaved(list); flash(`Deleted "${name}"`);
+    } catch { flash("Delete failed"); }
+  };
+
+  const importDeal = () => {
+    try {
+      const p = JSON.parse(importText);
+      if (!p.deal) throw new Error("missing deal");
+      loadDeal({ name: p.name || p.deal.address || "Imported deal", ...p });
+      setImportText("");
+    } catch { flash("Couldn't parse — paste the full JSON block from Claude"); }
+  };
+  const exportDeal = async () => {
+    const payload = { name: deal.address || "Exported deal", deal, adders,
+      estRows: rows.filter((r) => num(r.qty) > 0 || r.custom).map(({ id, ...rest }) => rest) };
+    const text = JSON.stringify(payload, null, 1);
+    try { await navigator.clipboard.writeText(text); flash("Deal JSON copied — paste it to Claude"); }
+    catch { setImportText(text); flash("Clipboard blocked — JSON placed in the import box, copy from there"); }
+  };
+
+  const setRow = (id, k, v) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
+  const addCustomRow = (tab, cat) =>
+    setRows((rs) => [...rs, { id: ++rid, tab, cat, desc: "Custom item", unit: "each", qty: 0, labor: 0, material: 0, custom: true }]);
+
+  const STEPS = ["ARV", "Purchase", "Repair Costs", "Fixed Costs", "Financing", "Profit"];
+
+  /* ================= RENDER ================= */
+  return (
+    <div style={{ minHeight: "100vh", background: T.paper, fontFamily: T.body, color: T.ink }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+        input[type=number]::-webkit-inner-spin-button{opacity:.4}
+        button:focus-visible,input:focus-visible{outline:2px solid ${T.teal};outline-offset:1px}
+        @media print{
+          .no-print{display:none!important}
+          body{background:#fff!important}
+          *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+        }`}</style>
+
+      {/* HEADER */}
+      <div className="no-print" style={{ background: T.ink, color: "#fff", padding: "14px 22px", display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", lineHeight: 1 }}>River Forged</div>
+          <div style={{ fontFamily: T.mono, fontSize: 11, color: "#9FB2C1", letterSpacing: "0.08em" }}>DEAL LAB · FLIP ANALYZER + REPAIR ESTIMATOR</div>
+        </div>
+        <div style={{ display: "flex", gap: 2, marginLeft: "auto", alignItems: "center" }}>
+          {[["analyzer", "Flip Analyzer"], ["estimator", "Repair Estimator"], ["review", "Review"], ["saved", `Saved Deals (${saved.length})`]].map(([k, l]) => (
+            <button key={k} onClick={() => setView(k)}
+              style={{ padding: "9px 16px", fontFamily: T.disp, fontSize: 14, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase",
+                cursor: "pointer", border: "none", borderRadius: 3,
+                background: view === k ? T.teal : "transparent", color: view === k ? "#fff" : "#9FB2C1" }}>{l}</button>
+          ))}
+          <button onClick={() => { setView("review"); setTimeout(() => window.print(), 350); }}
+            style={{ marginLeft: 10, padding: "9px 16px", fontFamily: T.disp, fontSize: 14, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase",
+              cursor: "pointer", border: "none", borderRadius: 3, background: "#fff", color: T.ink }}>🖨 Print Report</button>
+        </div>
+      </div>
+
+      {toast && <div style={{ position: "fixed", top: 70, right: 20, background: T.ink, color: "#fff", padding: "10px 16px", borderRadius: 4, fontFamily: T.mono, fontSize: 13, zIndex: 50 }}>{toast}</div>}
+
+      <div style={{ display: "flex", gap: 16, padding: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {/* ============ LEFT: content ============ */}
+        <div style={{ flex: "1 1 560px", minWidth: 340 }}>
+
+          {view === "analyzer" && (
+            <>
+              {/* deal identity */}
+              <Card title="Deal" right={
+                <button onClick={() => { setDeal({ ...RF_PRESET }); setStep(0); flash("New deal — River Forged defaults loaded"); }}
+                  style={{ padding: "6px 12px", borderRadius: 3, border: "none", background: T.teal, color: "#fff", cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 12 }}>
+                  + New Deal — RF Defaults</button>}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+                  <div><Lbl>Property address</Lbl>
+                    <input value={deal.address} onChange={(e) => D("address", e.target.value)} placeholder="312 Beverly St, Sturgis, MI"
+                      style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${T.line}`, borderRadius: 3, fontFamily: T.body, fontSize: 14 }} />
+                  </div>
+                  <div><Lbl>Square footage</Lbl><Inp value={deal.sqft} onChange={(v) => D("sqft", v)} suffix="SF" /></div>
+                </div>
+              </Card>
+
+              {/* step tabs */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 14, flexWrap: "wrap" }}>
+                {STEPS.map((s, i) => (
+                  <button key={s} onClick={() => setStep(i)}
+                    style={{ flex: "1 1 auto", padding: "9px 6px", fontFamily: T.disp, fontSize: 13, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase",
+                      cursor: "pointer", borderRadius: 3, border: `1px solid ${step === i ? T.ink : T.line}`,
+                      background: step === i ? T.ink : "#fff", color: step === i ? "#fff" : T.inkSoft }}>
+                    {i + 1}. {s}</button>
+                ))}
+              </div>
+
+              {step === 0 && (
+                <Card title="Step 1 · After Repair Value">
+                  <Lbl>What will the property be worth after renovations?</Lbl>
+                  <Inp value={deal.arv} onChange={(v) => D("arv", v)} prefix="$" w={260} />
+                  <div style={{ marginTop: 8, fontFamily: T.mono, fontSize: 12, color: T.inkSoft }}>
+                    {num(deal.sqft) > 0 ? `${fmt(num(deal.arv) / num(deal.sqft), 2)} / SF` : ""}
+                  </div>
+                </Card>
+              )}
+
+              {step === 1 && (
+                <Card title="Step 2 · Purchase Price">
+                  <Lbl>How much do you anticipate paying?</Lbl>
+                  <Inp value={deal.purchase} onChange={(v) => D("purchase", v)} prefix="$" w={260} />
+                  <div style={{ marginTop: 8, fontFamily: T.mono, fontSize: 12, color: T.teal, fontWeight: 700 }}>
+                    % of ARV: {pct(calc.arv > 0 ? calc.purchase / calc.arv : 0, 2)}
+                  </div>
+                </Card>
+              )}
+
+              {step === 2 && (
+                <Card title="Step 3 · Repair Costs">
+                  <Toggle value={deal.repairMode} onChange={(v) => D("repairMode", v)}
+                    options={[["lump", "Lump Sum"], ["psf", "$ per SF"], ["detailed", "Detailed"]]} />
+                  {deal.repairMode === "lump" && (<><Lbl>Total repair costs</Lbl><Inp value={deal.repairLump} onChange={(v) => D("repairLump", v)} prefix="$" w={260} /></>)}
+                  {deal.repairMode === "psf" && (
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <div><Lbl>$/SF</Lbl><Inp value={deal.repairPSF} onChange={(v) => D("repairPSF", v)} prefix="$" w={130} /></div>
+                      <div><Lbl>Square footage</Lbl><Inp value={deal.sqft} onChange={(v) => D("sqft", v)} suffix="SF" w={150} /></div>
+                      <div><Lbl>Total repair costs</Lbl><Inp value={(num(deal.repairPSF) * num(deal.sqft)).toFixed(0)} onChange={() => {}} prefix="$" w={160} disabled /></div>
+                    </div>)}
+                  {deal.repairMode === "detailed" && (
+                    <div>
+                      <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700 }}>{fmt(est.grand)}</div>
+                      <div style={{ fontSize: 13, color: T.inkSoft, margin: "6px 0 10px" }}>
+                        Pulled live from the Repair Estimator ({est.count} line items).</div>
+                      <button onClick={() => setView("estimator")}
+                        style={{ padding: "9px 16px", background: T.teal, color: "#fff", border: "none", borderRadius: 3, fontFamily: T.disp, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer" }}>
+                        Edit detailed estimate</button>
+                    </div>)}
+                </Card>
+              )}
+
+              {step === 3 && (
+                <>
+                  <Card title="Buying Costs" right={<span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700 }}>{fmt(calc.buying)}</span>}>
+                    <Toggle value={deal.buyMode} onChange={(v) => D("buyMode", v)} options={[["lump", "Lump Sum"], ["pct", "% of Purchase"]]} />
+                    {deal.buyMode === "pct"
+                      ? <div style={{ display: "flex", gap: 12 }}><div><Lbl>% of purchase</Lbl><Inp value={deal.buyPct} onChange={(v) => D("buyPct", v)} suffix="%" w={120} /></div></div>
+                      : <><Lbl>Total buying costs</Lbl><Inp value={deal.buyLump} onChange={(v) => D("buyLump", v)} prefix="$" w={200} /></>}
+                    <div style={{ fontSize: 12, color: T.inkSoft, marginTop: 8 }}>Title, inspections, appraisals — usually 1–3% of purchase.</div>
+                  </Card>
+                  <Card title="Holding Costs" right={<span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700 }}>{fmt(calc.holding)}</span>}>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                      <div><Lbl>Renovation period</Lbl><Inp value={deal.renoMonths} onChange={(v) => D("renoMonths", v)} suffix="mo" w={130} /></div>
+                      <div><Lbl>Sales period</Lbl><Inp value={deal.salesMonths} onChange={(v) => D("salesMonths", v)} suffix="mo" w={130} /></div>
+                      <div><Lbl>Total holding time</Lbl><Inp value={calc.holdMonths} onChange={() => {}} suffix="mo" w={130} disabled /></div>
+                    </div>
+                    {calc.repair > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#FDF3E3", border: "1px solid #F5CBA7", borderRadius: 3, padding: "8px 12px", marginBottom: 10, fontSize: 12.5, color: "#7E5109" }}>
+                        <span>RF rule: {fmt(calc.repair)} rehab ≈ <b>{calc.rehabDays} work days</b> ≈ <b>{calc.suggReno} mo</b> renovation.</span>
+                        {num(deal.renoMonths) !== calc.suggReno && (
+                          <button onClick={() => D("renoMonths", calc.suggReno)}
+                            style={{ padding: "4px 12px", borderRadius: 3, border: "none", background: "#E67E22", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Apply</button>)}
+                      </div>)}
+                    <Toggle value={deal.holdMode} onChange={(v) => D("holdMode", v)} options={[["lump", "Lump Sum"], ["permonth", "$ per Month"]]} />
+                    {deal.holdMode === "permonth"
+                      ? <div><Lbl>$ per month (taxes, utilities, insurance)</Lbl><Inp value={deal.holdPerMonth} onChange={(v) => D("holdPerMonth", v)} prefix="$" w={160} /></div>
+                      : <><Lbl>Total holding costs</Lbl><Inp value={deal.holdLump} onChange={(v) => D("holdLump", v)} prefix="$" w={200} /></>}
+                  </Card>
+                  <Card title="Selling Costs" right={<span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700 }}>{fmt(calc.selling)}</span>}>
+                    <Toggle value={deal.sellMode} onChange={(v) => D("sellMode", v)} options={[["lump", "Lump Sum"], ["pct", "% of Resale"]]} />
+                    {deal.sellMode === "pct"
+                      ? <div><Lbl>% of resale (commissions + closing)</Lbl><Inp value={deal.sellPct} onChange={(v) => D("sellPct", v)} suffix="%" w={120} /></div>
+                      : <><Lbl>Total selling costs</Lbl><Inp value={deal.sellLump} onChange={(v) => D("sellLump", v)} prefix="$" w={200} /></>}
+                  </Card>
+                </>
+              )}
+
+              {step === 4 && (
+                <Card title="Step 5 · Financing" right={<span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700 }}>{fmt(calc.financing)}</span>}>
+                  <Toggle value={deal.finStrategy} onChange={(v) => D("finStrategy", v)} options={[["cash", "Cash Purchase"], ["loan", "Loan"]]} />
+                  {deal.finStrategy === "loan" && (
+                    <>
+                      <Lbl>Loan amount basis</Lbl>
+                      <Toggle value={deal.loanBasis} onChange={(v) => D("loanBasis", v)}
+                        options={[["lump", "Lump Sum"], ["purchase", "Purchase"], ["repairs", "Repairs"], ["both", "Purchase & Repairs"], ["arv", "ARV"]]} />
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                        {deal.loanBasis === "lump" && <div><Lbl>Loan amount</Lbl><Inp value={deal.loanLump} onChange={(v) => D("loanLump", v)} prefix="$" w={180} /></div>}
+                        {(deal.loanBasis === "purchase" || deal.loanBasis === "both") && <div><Lbl>Purchase LTV</Lbl><Inp value={deal.ltvP} onChange={(v) => D("ltvP", v)} suffix="%" w={120} /></div>}
+                        {(deal.loanBasis === "repairs" || deal.loanBasis === "both") && <div><Lbl>Repairs LTV</Lbl><Inp value={deal.ltvR} onChange={(v) => D("ltvR", v)} suffix="%" w={120} /></div>}
+                        {deal.loanBasis === "arv" && <div><Lbl>ARV LTV</Lbl><Inp value={deal.ltvArv} onChange={(v) => D("ltvArv", v)} suffix="%" w={120} /></div>}
+                        <div><Lbl>Total loan amount</Lbl><Inp value={calc.loan.toFixed(0)} onChange={() => {}} prefix="$" w={160} disabled /></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                        <div><Lbl>Annual interest rate</Lbl><Inp value={deal.rate} onChange={(v) => D("rate", v)} suffix="%" w={120} /></div>
+                        <div><Lbl># of monthly payments</Lbl>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <Inp value={deal.finMonthsAuto ? calc.holdMonths : deal.finMonths} onChange={(v) => { D("finMonthsAuto", false); D("finMonths", v); }} suffix="mo" w={120} disabled={deal.finMonthsAuto} />
+                            <label style={{ fontSize: 12, color: T.inkSoft, display: "flex", gap: 4, alignItems: "center", cursor: "pointer" }}>
+                              <input type="checkbox" checked={deal.finMonthsAuto} onChange={(e) => D("finMonthsAuto", e.target.checked)} />match holding</label>
+                          </div></div>
+                        <div><Lbl>Points</Lbl><Inp value={deal.points} onChange={(v) => D("points", v)} suffix="%" w={110} /></div>
+                        <div><Lbl>Other costs</Lbl><Inp value={deal.otherPct} onChange={(v) => D("otherPct", v)} suffix="%" w={110} /></div>
+                      </div>
+                      {deal.loanBasis === "both" && (
+                        <>
+                          <Lbl>Rehab funds schedule</Lbl>
+                          <Toggle value={deal.interestSchedule} onChange={(v) => D("interestSchedule", v)}
+                            options={[["full", "Upfront (full loan)"], ["holdback", "Holdback (draws)"]]} />
+                          <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>
+                            Holdback charges interest on the purchase portion for the full term, and on rehab funds as drawn evenly over the reno period.</div>
+                        </>)}
+                      <div style={{ background: "#F6F8F7", border: `1px solid ${T.line}`, borderRadius: 3, padding: 12 }}>
+                        <Row label="Monthly payment" val={fmt(calc.monthly, 0) + "/mo"} />
+                        <Row label="Interest payments" val={fmt(calc.interest)} color={T.amber} />
+                        <Row label="Points" val={fmt(calc.pts)} color={T.amber} />
+                        <Row label="Other costs" val={fmt(calc.other)} />
+                        <Row label="Total financing costs" val={fmt(calc.financing)} bold />
+                      </div>
+                    </>)}
+                </Card>
+              )}
+
+              {step === 5 && (
+                <>
+                  <div style={{ background: calc.passes ? T.green : T.red, color: "#fff", borderRadius: 4, padding: "20px 22px", marginBottom: 14 }}>
+                    <div style={{ fontFamily: T.disp, fontSize: 15, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.85 }}>Profit results</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 36, fontWeight: 700, margin: "4px 0" }}>{fmt(calc.profit)}</div>
+                    <div style={{ fontSize: 13.5 }}>Calculated profit at a purchase price of <b>{fmt(calc.purchase)}</b> · {pct(calc.arv > 0 ? calc.profit / calc.arv : 0)} of ARV</div>
+                  </div>
+                  <Card title="Desired Profit → Max Purchase Price">
+                    <Toggle value={deal.profitMode} onChange={(v) => D("profitMode", v)} options={[["pct", "% of Resale"], ["lump", "Lump Sum"]]} />
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      {deal.profitMode === "pct"
+                        ? <div><Lbl>% of resale</Lbl><Inp value={deal.profitPct} onChange={(v) => D("profitPct", v)} suffix="%" w={120} /></div>
+                        : <div><Lbl>Profit amount</Lbl><Inp value={deal.profitLump} onChange={(v) => D("profitLump", v)} prefix="$" w={170} /></div>}
+                      <div><Lbl>Desired profit</Lbl><Inp value={calc.desired.toFixed(0)} onChange={() => {}} prefix="$" w={160} disabled /></div>
+                    </div>
+                    <div style={{ background: T.ink, color: "#fff", borderRadius: 3, padding: "16px 18px" }}>
+                      <div style={{ fontFamily: T.disp, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9FB2C1" }}>Recommended max purchase price</div>
+                      <div style={{ fontFamily: T.mono, fontSize: 28, fontWeight: 700 }}>{fmt(calc.mao)}</div>
+                      <div style={{ fontSize: 12.5, color: "#B9C7D3", marginTop: 4 }}>
+                        Solved iteratively — buying costs and loan costs are recalculated at the offer price, so this is tighter than FlipperForce's static version.</div>
+                    </div>
+                  </Card>
+                </>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <button disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}
+                  style={{ padding: "10px 20px", borderRadius: 3, border: `1px solid ${T.line}`, background: "#fff", color: T.inkSoft, cursor: step === 0 ? "default" : "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", opacity: step === 0 ? 0.4 : 1 }}>Previous</button>
+                <button disabled={step === 5} onClick={() => setStep((s) => Math.min(5, s + 1))}
+                  style={{ padding: "10px 24px", borderRadius: 3, border: "none", background: T.teal, color: "#fff", cursor: step === 5 ? "default" : "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", opacity: step === 5 ? 0.4 : 1 }}>Next</button>
+              </div>
+            </>
+          )}
+
+          {view === "estimator" && (
+            <>
+              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+                {Object.keys(LIB).map((t) => (
+                  <button key={t} onClick={() => setEstTab(t)}
+                    style={{ padding: "9px 16px", fontFamily: T.disp, fontSize: 14, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", cursor: "pointer", borderRadius: 3,
+                      border: `1px solid ${estTab === t ? T.ink : T.line}`, background: estTab === t ? T.ink : "#fff", color: estTab === t ? "#fff" : T.inkSoft }}>
+                    {t} <span style={{ fontFamily: T.mono, fontSize: 12 }}>{fmt(est.byTab[t].labor + est.byTab[t].material)}</span></button>
+                ))}
+              </div>
+
+              {/* adders */}
+              <Card title="Adders" right={<span style={{ fontFamily: T.mono, fontWeight: 700 }}>{fmt(est.adderAmt)}</span>}>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {[["location", "Location adj (% subtotal)"], ["contingency", "Contingency (% subtotal)"], ["ohp", "Contractor O&P (% subtotal)"], ["laborTax", "Labor tax (% labor)"], ["matTax", "Material tax (% material)"]].map(([k, l]) => (
+                    <div key={k}><Lbl>{l}</Lbl><Inp value={adders[k]} onChange={(v) => setAdders((a) => ({ ...a, [k]: v }))} suffix="%" w={110} /></div>
+                  ))}
+                </div>
+              </Card>
+
+              {LIB[estTab].map(([cat]) => {
+                const catRows = rows.filter((r) => r.tab === estTab && r.cat === cat);
+                const catTotal = catRows.reduce((s, r) => s + num(r.qty) * (num(r.labor) + num(r.material)), 0);
+                const open = openCats[estTab + cat] ?? catTotal > 0;
+                return (
+                  <div key={cat} style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 4, marginBottom: 8, overflow: "hidden" }}>
+                    <button onClick={() => setOpenCats((o) => ({ ...o, [estTab + cat]: !open }))}
+                      style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 16px", background: catTotal > 0 ? "#EAF3F1" : "#F7F9F8", border: "none", cursor: "pointer" }}>
+                      <span style={{ fontFamily: T.disp, fontSize: 15, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink }}>{open ? "▾" : "▸"} {cat}</span>
+                      <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: catTotal > 0 ? T.teal : T.inkSoft }}>{fmt(catTotal)}</span>
+                    </button>
+                    {open && (
+                      <div style={{ padding: "4px 12px 12px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,3fr) 90px 70px 90px 90px 100px", gap: 6, padding: "6px 4px", fontFamily: T.disp, fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.inkSoft, fontWeight: 600 }}>
+                          <span>Description</span><span>Unit</span><span>Qty</span><span>Labor $</span><span>Mat'l $</span><span style={{ textAlign: "right" }}>Total</span>
+                        </div>
+                        {catRows.map((r) => {
+                          const tot = num(r.qty) * (num(r.labor) + num(r.material));
+                          return (
+                            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,3fr) 90px 70px 90px 90px 100px", gap: 6, alignItems: "center", padding: "3px 4px", background: tot > 0 ? "#F3FAF8" : "transparent", borderRadius: 3 }}>
+                              {r.custom
+                                ? <input value={r.desc} onChange={(e) => setRow(r.id, "desc", e.target.value)} style={{ border: `1px solid ${T.line}`, borderRadius: 3, padding: "5px 7px", fontSize: 13 }} />
+                                : <span style={{ fontSize: 13 }}>{r.desc}</span>}
+                              <span style={{ fontSize: 12, color: T.inkSoft }}>{r.unit}</span>
+                              <input type="number" step="any" value={r.qty} onChange={(e) => setRow(r.id, "qty", e.target.value)}
+                                style={{ border: `1px solid ${tot > 0 ? T.teal : T.line}`, borderRadius: 3, padding: "5px 7px", fontFamily: T.mono, fontSize: 13, width: "100%", boxSizing: "border-box" }} />
+                              <input type="number" step="any" value={r.labor} onChange={(e) => setRow(r.id, "labor", e.target.value)}
+                                style={{ border: `1px solid ${T.line}`, borderRadius: 3, padding: "5px 7px", fontFamily: T.mono, fontSize: 13, width: "100%", boxSizing: "border-box" }} />
+                              <input type="number" step="any" value={r.material} onChange={(e) => setRow(r.id, "material", e.target.value)}
+                                style={{ border: `1px solid ${T.line}`, borderRadius: 3, padding: "5px 7px", fontFamily: T.mono, fontSize: 13, width: "100%", boxSizing: "border-box" }} />
+                              <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: tot > 0 ? 700 : 400, textAlign: "right", color: tot > 0 ? T.ink : T.inkSoft }}>{fmt(tot)}</span>
+                            </div>);
+                        })}
+                        <button onClick={() => addCustomRow(estTab, cat)}
+                          style={{ marginTop: 6, padding: "5px 12px", borderRadius: 12, border: `1px solid ${T.teal}`, background: "#fff", color: T.teal, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>+ Add row</button>
+                      </div>)}
+                  </div>);
+              })}
+            </>
+          )}
+
+          {view === "review" && (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}>
+                <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink }}>Overview</div>
+                <div style={{ fontSize: 13, color: T.inkSoft }}>{deal.address || "Untitled deal"}</div>
+                <div style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12, color: T.inkSoft }}>{new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}</div>
+              </div>
+
+              {/* FLIP STATS */}
+              <div style={{ fontFamily: T.disp, fontSize: 16, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink, marginBottom: 8 }}>Flip Stats</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, marginBottom: 18 }}>
+                {[
+                  ["After Repair Value", fmt(calc.arv), num(deal.sqft) > 0 ? fmt(calc.arv / num(deal.sqft), 2) + " / SF" : "", T.teal],
+                  ["Purchase Price", fmt(calc.purchase), pct(calc.arv > 0 ? calc.purchase / calc.arv : 0, 1) + " of ARV", T.ink],
+                  ["Calculated Profit", fmt(calc.profit), pct(calc.arv > 0 ? calc.profit / calc.arv : 0, 1) + " of ARV", calc.basePass ? T.green : T.red],
+                  ["70% Rule Formula", pct(calc.rule70, 2), "% of ARV", T.teal],
+                ].map(([l, v, chip, col]) => (
+                  <div key={l} style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft, marginBottom: 6 }}>{l}</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 25, fontWeight: 700, color: col }}>{v}</div>
+                    {chip && <span style={{ display: "inline-block", marginTop: 8, background: "#EAF2FA", color: T.inkSoft, fontFamily: T.mono, fontSize: 11, padding: "3px 8px", borderRadius: 3 }}>{chip}</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* PROJECT TIMELINE */}
+              <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: 16, marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontFamily: T.disp, fontSize: 16, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink }}>Project Timeline</span>
+                  <span style={{ background: "#EAF2FA", fontFamily: T.mono, fontSize: 12, padding: "3px 10px", borderRadius: 3, fontWeight: 700, color: T.ink }}>{calc.holdMonths} Months</span>
+                </div>
+                <div style={{ display: "flex", height: 30, borderRadius: 3, overflow: "hidden", border: `1px solid ${T.line}` }}>
+                  {num(deal.renoMonths) > 0 && (
+                    <div style={{ flex: num(deal.renoMonths), background: "#FAD7A0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#7E5109", whiteSpace: "nowrap", overflow: "hidden" }}>
+                      Renovation Period ({num(deal.renoMonths)} {num(deal.renoMonths) === 1 ? "Month" : "Months"})</div>)}
+                  {num(deal.salesMonths) > 0 && (
+                    <div style={{ flex: num(deal.salesMonths), background: "#D6EAF8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#1F618D", whiteSpace: "nowrap", overflow: "hidden" }}>
+                      Sales Period ({num(deal.salesMonths)} {num(deal.salesMonths) === 1 ? "Month" : "Months"})</div>)}
+                </div>
+              </div>
+
+              {/* STRESS TEST */}
+              <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: 16, marginBottom: 18 }}>
+                <div style={{ fontFamily: T.disp, fontSize: 16, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink, marginBottom: 2 }}>Stress Test</div>
+                <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>
+                  Base case must clear the <b>{fmt(calc.baseTarget)}</b> target (greater of $50K or 20% of ARV). When things run over, each scenario must stay above the <b>{fmt(calc.stormFloor)}</b> walk-away floor{calc.allIn > 250000 ? " — raised to $50K because all-in tops $250K" : ""}.</div>
+                {calc.stress.map((s) => (
+                  <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${T.line}` }}>
+                    <span style={{ flex: 1, fontSize: 13.5, fontWeight: s.name === "Base case" ? 700 : 400, color: T.ink }}>{s.name}</span>
+                    <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkSoft, minWidth: 74, textAlign: "right" }}>≥ {fmt(s.floor)}</span>
+                    <span style={{ fontFamily: T.mono, fontSize: 13.5, fontWeight: 700, color: s.profit >= 0 ? T.ink : T.red, minWidth: 88, textAlign: "right" }}>{fmt(s.profit)}</span>
+                    <span style={{ fontFamily: T.disp, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", padding: "3px 10px", borderRadius: 3,
+                      background: s.passes ? "#E8F6EF" : "#FBEAE8", color: s.passes ? T.green : T.red, minWidth: 58, textAlign: "center" }}>
+                      {s.passes ? "Pass" : "Fail"}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* REPAIR BREAKDOWN (detailed mode) */}
+              {deal.repairMode === "detailed" && (
+                <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: 16, marginBottom: 18 }}>
+                  <div style={{ fontFamily: T.disp, fontSize: 16, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink, marginBottom: 8 }}>Repair Cost Breakdown</div>
+                  {Object.entries(est.byTab).map(([tab, v]) => (
+                    <Row key={tab} label={tab} val={fmt(v.labor + v.material)} />
+                  ))}
+                  <Row label="Adders (contingency, O&P, tax)" val={fmt(est.adderAmt)} />
+                  <Row label="Total Repair Estimate" val={fmt(est.grand)} bold />
+                </div>)}
+
+              {/* DETAILED PROFIT & MPP RESULTS */}
+              <div style={{ fontFamily: T.disp, fontSize: 16, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: T.ink, marginBottom: 4 }}>Detailed Profit &amp; MPP Results</div>
+              <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>
+                Your <b>Calculated Profit</b> at a known purchase price, versus the <b>Recommended Maximum Purchase Price</b> for your desired profit.</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 14 }}>
+
+                {/* Calculated Profit */}
+                <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: T.ink, marginBottom: 6 }}>Calculated Profit</div>
+                  <div style={{ fontFamily: T.mono, fontSize: 10.5, background: "#F4F6F7", padding: "5px 8px", borderRadius: 3, color: T.inkSoft, marginBottom: 8 }}>
+                    Profit = ARV − Purchase − Repair − Buying − Holding − Selling − Financing</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", background: "#DEEDF7", padding: "7px 10px", fontWeight: 700, fontSize: 13, color: T.ink, borderRadius: 3 }}>
+                    <span>Project Items</span><span>Amount</span></div>
+                  <Row label="After Repair Value" val={fmt(calc.arv)} />
+                  <Row label="Purchase Price" val={"-" + fmt(calc.purchase)} />
+                  <Row label="Repair Cost" val={"-" + fmt(calc.repair)} />
+                  <Row label="Buying Costs" val={"-" + fmt(calc.buying)} />
+                  <Row label="Holding Costs" val={"-" + fmt(calc.holding)} />
+                  <Row label="Selling Costs" val={"-" + fmt(calc.selling)} />
+                  <Row label="Financing Costs" val={"-" + fmt(calc.financing)} />
+                  <Row label="Calculated Profit" val={fmt(calc.profit)} bold color={calc.profit >= 0 ? T.green : T.red} />
+                  <div style={{ background: calc.profit >= 0 ? T.green : T.red, color: "#fff", borderRadius: 4, padding: "14px 16px", marginTop: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>Profit Results</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 26, fontWeight: 700, margin: "2px 0" }}>{fmt(calc.profit)}</div>
+                    <div style={{ fontSize: 12.5 }}>Your Calculated Profit is <b>{fmt(calc.profit)}</b> based upon a purchase price of <b>{fmt(calc.purchase)}</b>.</div>
+                  </div>
+                </div>
+
+                {/* Recommended Max Purchase Price */}
+                <div style={{ background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: T.ink, marginBottom: 6 }}>Recommended Maximum Purchase Price</div>
+                  <div style={{ fontFamily: T.mono, fontSize: 10.5, background: "#F4F6F7", padding: "5px 8px", borderRadius: 3, color: T.inkSoft, marginBottom: 8 }}>
+                    Max Purchase = ARV − Repair − Buying − Holding − Selling − Financing − Desired Profit</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", background: "#DEEDF7", padding: "7px 10px", fontWeight: 700, fontSize: 13, color: T.ink, borderRadius: 3 }}>
+                    <span>Project Items</span><span>Amount</span></div>
+                  <Row label="After Repair Value" val={fmt(calc.arv)} />
+                  <Row label="Repair Cost" val={"-" + fmt(calc.repair)} />
+                  <Row label="Buying Costs" val={"-" + fmt(calc.buying)} />
+                  <Row label="Holding Costs" val={"-" + fmt(calc.holding)} />
+                  <Row label="Selling Costs" val={"-" + fmt(calc.selling)} />
+                  <Row label="Financing Costs" val={"-" + fmt(calc.financing)} />
+                  <Row label="Desired Profit" val={"-" + fmt(calc.desired)} />
+                  <Row label="Recommended Max Purchase Price" val={fmt(calc.mppStatic)} bold />
+                  <div style={{ background: "#2E86C1", color: "#fff", borderRadius: 4, padding: "14px 16px", marginTop: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>Recommended Max Purchase Price</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 26, fontWeight: 700, margin: "2px 0" }}>{fmt(calc.mppStatic)}</div>
+                    <div style={{ fontSize: 12.5 }}>If you want to make <b>{fmt(calc.desired)}</b> you should purchase the property for <b>{fmt(calc.mppStatic)}</b>.</div>
+                    <div style={{ fontSize: 11.5, marginTop: 6, opacity: 0.85 }}>True iterative max (buying + financing recalculated at the offer): <b>{fmt(calc.mao)}</b></div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {view === "saved" && (
+            <>
+            <Card title="Import Deal from Claude" right={
+              <button onClick={exportDeal} style={{ padding: "6px 12px", borderRadius: 3, border: `1px solid ${T.teal}`, background: "#fff", color: T.teal, cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 12 }}>Export current deal</button>}>
+              <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 8 }}>
+                Paste the deal JSON Claude gives you after a property analysis — it pre-fills the analyzer and estimator so you can micro-adjust. Export sends the current deal back to Claude for review.</div>
+              <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={5}
+                placeholder='{"name":"506 S Main St...","deal":{...},"adders":{...},"estRows":[...]}'
+                style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${T.line}`, borderRadius: 3, padding: 10, fontFamily: T.mono, fontSize: 12, resize: "vertical" }} />
+              <button onClick={importDeal}
+                style={{ marginTop: 8, padding: "9px 18px", borderRadius: 3, border: "none", background: T.teal, color: "#fff", cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 13 }}>Import deal</button>
+            </Card>
+            <Card title="Saved Deals">
+              {saved.length === 0 && <div style={{ color: T.inkSoft, fontSize: 14 }}>No saved deals yet. Analyze a deal, then save it from the ledger panel — it'll persist across sessions.</div>}
+              {saved.map((p) => (
+                <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${T.line}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 11.5, color: T.inkSoft }}>
+                      ARV {fmt(num(p.deal.arv))} · saved {new Date(p.savedAt).toLocaleDateString()}</div>
+                  </div>
+                  <button onClick={() => loadDeal(p)} style={{ padding: "7px 14px", borderRadius: 3, border: "none", background: T.teal, color: "#fff", cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 12 }}>Load</button>
+                  <button onClick={() => deleteDeal(p.name)} style={{ padding: "7px 12px", borderRadius: 3, border: `1px solid ${T.red}`, background: "#fff", color: T.red, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
+                </div>
+              ))}
+            </Card>
+            </>
+          )}
+        </div>
+
+        {/* ============ RIGHT: live ledger ============ */}
+        <div className="no-print" style={{ flex: "0 1 340px", minWidth: 300, position: "sticky", top: 16 }}>
+          {/* verdict stamp */}
+          {(() => {
+            const vColor = calc.verdict === "clears" ? T.green : calc.verdict === "thin" ? T.amber : T.red;
+            const vText = calc.verdict === "clears" ? "✓ Clears Floor" : calc.verdict === "thin" ? "⚠ Thin — Storm Risk" : "✕ Below Floor";
+            const vSub = calc.verdict === "clears" ? "clears target and survives the perfect storm"
+              : calc.verdict === "thin" ? `hits ${fmt(calc.baseTarget)} target, but perfect storm dips under ${fmt(calc.stormFloor)}`
+              : `needs ${fmt(calc.baseTarget)} — greater of $50K or 20% of ARV`;
+            return (
+              <div style={{ background: T.panel, border: `3px solid ${vColor}`, borderRadius: 4, padding: "14px 16px", marginBottom: 12, textAlign: "center" }}>
+                <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: vColor }}>{vText}</div>
+                <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkSoft, marginTop: 3 }}>{vSub}</div>
+                <div style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>
+                  target {fmt(calc.baseTarget)} · storm floor {fmt(calc.stormFloor)}{calc.allIn > 250000 ? " · all-in > $250K" : ""}</div>
+              </div>);
+          })()}
+
+          <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 4, padding: 16 }}>
+            <div style={{ fontFamily: T.disp, fontSize: 15, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.ink}`, paddingBottom: 6, marginBottom: 8 }}>
+              Live Deal Ledger</div>
+            <Row label="After Repair Value" val={fmt(calc.arv)} />
+            <Row label="Purchase Costs" val={"-" + fmt(calc.purchase)} />
+            <Row label="Repair Costs" val={"-" + fmt(calc.repair)} />
+            <Row label="Buying Costs" val={"-" + fmt(calc.buying)} />
+            <Row label="Holding Costs" val={"-" + fmt(calc.holding)} />
+            <Row label="Selling Costs" val={"-" + fmt(calc.selling)} />
+            <Row label="Financing Costs" val={"-" + fmt(calc.financing)} />
+            <Row label="Profit" val={fmt(calc.profit)} bold color={calc.profit >= 0 ? T.green : T.red} />
+            <div style={{ height: 10 }} />
+            <Row label="Profit % of ARV" val={pct(calc.arv > 0 ? calc.profit / calc.arv : 0, 2)} sub />
+            <Row label="70% Rule (Purch+Repair)/ARV" val={pct(calc.rule70, 1)} sub color={calc.rule70 <= 0.7 ? T.green : T.amber} />
+            <Row label="Total loan funding" val={fmt(calc.loan)} sub />
+            <Row label="Cash needed" val={fmt(calc.cashNeeded)} sub />
+            <Row label="COCR" val={isFinite(calc.cocr) ? pct(calc.cocr, 1) : "all-cash n/a"} sub />
+            <Row label="Annualized COCR" val={isFinite(calc.annCocr) ? pct(calc.annCocr, 1) : "—"} sub />
+            <Row label="Timeline" val={calc.holdMonths + " months"} sub />
+            <Row label="Max purchase @ desired profit" val={fmt(calc.mao)} sub color={T.teal} />
+
+            <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+              <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder={deal.address || "Deal name"}
+                style={{ flex: 1, minWidth: 0, padding: "8px 10px", border: `1px solid ${T.line}`, borderRadius: 3, fontSize: 13 }} />
+              <button onClick={saveDeal}
+                style={{ padding: "8px 16px", borderRadius: 3, border: "none", background: T.ink, color: "#fff", cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 12 }}>Save deal</button>
+            </div>
+            <button onClick={() => setView("review")}
+              style={{ marginTop: 8, width: "100%", padding: "10px 16px", borderRadius: 3, border: "none", background: T.teal, color: "#fff", cursor: "pointer", fontFamily: T.disp, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 13 }}>
+              Review Full Analysis →</button>
+          </div>
+
+          {view === "estimator" && (
+            <div style={{ background: T.ink, color: "#fff", borderRadius: 4, padding: 16, marginTop: 12 }}>
+              <div style={{ fontFamily: T.disp, fontSize: 14, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9FB2C1" }}>Estimate Grand Total</div>
+              <div style={{ fontFamily: T.mono, fontSize: 30, fontWeight: 700 }}>{fmt(est.grand)}</div>
+              <div style={{ fontFamily: T.mono, fontSize: 12, color: "#B9C7D3", marginTop: 4 }}>
+                Labor {fmt(est.labor)} · Mat'l {fmt(est.material)}<br />
+                Subtotal {fmt(est.subtotal)} + Adders {fmt(est.adderAmt)}<br />
+                {num(deal.sqft) > 0 ? fmt(est.grand / num(deal.sqft), 2) + " / SF · " : ""}{est.count} line items</div>
+            </div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
