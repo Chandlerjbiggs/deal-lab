@@ -1,10 +1,13 @@
-# River Forged Deal Lab
+# Chandler Biggs Deal Analyzer
 
-Flip analyzer + repair estimator for River Forged LLC (Chandler Biggs, Grand Rapids MI house flipper).
-Replaces FlipperForce ($30/mo). Live at https://chandlerjbiggs.github.io/deal-lab/
+Rental analyzer + flip analyzer + repair estimator for River Forged LLC (Chandler Biggs, Grand
+Rapids MI house flipper). Replaces FlipperForce ($30/mo). Live at https://chandlerjbiggs.github.io/deal-lab/
+(The repo/URL keep the `deal-lab` name — renaming them would break the live Pages URL.)
 
 ## Architecture
 - **Single-source app.** `river-forged-deal-lab.jsx` is the source of truth — one React component, no build system.
+- **Tabs:** Rental Analyzer · Flip Analyzer · Repair Estimator · Review · Saved Deals. The two sides are
+  independent: rentals never touch flip state, and the flip ledger is hidden on the rental tab.
 - **`index.html` is the deployable** — the same JSX embedded in an HTML shell that loads React 18 UMD + Babel standalone from cdnjs and transpiles in-browser. A `storageShim` maps the artifact `window.storage` API to `localStorage`.
 - **Build = `node build.js`** — regenerates `index.html` from the jsx. No dependencies, no `node_modules`; plain Node, nothing to install. It strips the React import (uses UMD globals), unwraps `export default`, replaces `window.storage` → `storageShim`, and embeds the result in the HTML shell held in `build.js`. Every transform asserts it matched — if the jsx changes shape, the build fails loudly instead of shipping a broken `index.html`.
   - `node build.js --check` verifies `index.html` is up to date without writing (exit 1 if stale).
@@ -12,6 +15,23 @@ Replaces FlipperForce ($30/mo). Live at https://chandlerjbiggs.github.io/deal-la
   - The HTML shell (CDN versions, `storageShim`, favicon) lives in `build.js`; change it there.
 - **Deploy**: `node build.js` → commit both the jsx and `index.html` to main → GitHub Pages auto-deploys from main root.
 - Saved deals live in each browser's localStorage under key `rf-deals`. Never break that key or users lose their deals.
+
+## Rental Analyzer
+Ported from a standalone vanilla-JS "Rental Deal Calculator" HTML file. The math is a **verbatim
+port** — verified against the original across 7 scenarios (mortgage, seller-finance w/ balloon,
+interest-only, IO-with-no-balloon, HELOC auto-match, cash, and a mixed /mo·/yr loaded case); every
+figure matched to the dollar. Treat it like the flip math: **do not change without sign-off.**
+- **Separate storage.** Rentals live under `rf-rental-deals-v1` (+ `rf-rental-draft-v1` for the
+  debounced autosave draft). Never merge them into `rf-deals` — different schema, different animal.
+- **Rental state lives in `App`**, not in the view, so switching tabs never discards work in progress.
+- **Styling is scoped under `.rv`.** The original stylesheet used bare `label` / `input` selectors that
+  would restyle the flip analyzer if unscoped. Keep new rental CSS under `.rv`.
+- **Own export.** "Export File" downloads rental-only JSON (`type: "rf-rental-deal"`); Print while on
+  the rental tab prints only the rental sheet (the app renders one tab at a time).
+- Dropped in the port: the "Compare Side-by-Side" popup (opened a second window with `?pane=B`) —
+  it contradicted keeping everything in one app. Saved rentals + tab switching cover it.
+- The brass accent (`#9A741B`) was remapped to `T.teal`/`T.tealDark`, pos/neg to `T.green`/`T.red`,
+  body font Barlow → Inter. Barlow Condensed and IBM Plex Mono already matched.
 
 ## Math invariants — do not change without Chandler's sign-off
 1. **Profit** = ARV − Purchase − Repair − Buying − Holding − Selling − Financing (FlipperForce-compatible; verified to the dollar against FF).

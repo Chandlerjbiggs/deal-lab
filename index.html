@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chandler Biggs Flip Analyzer</title>
+<title>Chandler Biggs Deal Analyzer</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128296;</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -20,7 +20,7 @@ const storageShim = {
 };
 </script>
 <script type="text/babel" data-presets="react">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
 /* ======= CHANDLER BIGGS FLIP ANALYZER =========
    Flip Analyzer + Repair Estimator
@@ -302,6 +302,117 @@ const RF_PRESET = { ...{
   profitMode: "lump", profitPct: 20, profitLump: 50000,
 } };
 
+/* ================= RENTAL ANALYZER =================
+   Ported from the standalone Rental Deal Calculator. The math below is a
+   verbatim port — every formula, rounding point and edge case matches the
+   original; only the styling was remapped to the T palette. Rentals keep
+   their own storage (rf-rental-deals-v1) and never mix with flip deals.
+==================================================== */
+const DEFAULT_OPEX = ["Repairs & Maintenance", "Utilities", "Lawn Care", "Snow Removal", "Internet", "Trash Service", "Pest Control"];
+
+const DEFAULT_RENTAL = {
+  addr: "", beds: "", baths: "", basis: "unit",
+  income: [{ name: "Unit 1", amt: 1200, f: "mo" }, { name: "Unit 2", amt: 1200, f: "mo" }],
+  vacancy: 5, otherInc: 0, fOtherInc: "mo",
+  opex: DEFAULT_OPEX.map((n) => ({ name: n, amt: "", f: "mo" })),
+  reserve: 3000, fReserve: "yr",
+  finType: "mortgage",
+  price: 250000, rate: 7.0, dpPct: 20, term: 30,
+  sfDpAmt: 25000, sfAmort: 30, sfBalloon: 5, sfIO: false,
+  pmi: 0, fPmi: "mo", taxes: 0, fTaxes: "yr", ins: 0, fIns: "yr",
+  useHeloc: false, helocAmt: 0, helocRate: 6.5, helocPrin: 0, fHelocPrin: "mo", helocMatch: true,
+};
+
+const mortgagePI = (loan, ratePct, years) => {
+  const n = years * 12, r = ratePct / 100 / 12;
+  if (loan <= 0 || n <= 0) return 0;
+  if (r === 0) return loan / n;
+  return loan * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+};
+
+/* per-line and per-field /mo <-> /yr normalisation */
+const lineMo = (l) => { const v = num(l.amt); return l.f === "yr" ? v / 12 : v; };
+const sumMo = (lines) => (lines || []).reduce((s, l) => s + lineMo(l), 0);
+const fieldMo = (r, key, fkey) => { const v = num(r[key]); return r[fkey] === "yr" ? v / 12 : v; };
+
+const rentalCalc = (r) => {
+  const gpr = sumMo(r.income);
+  const vacPct = Math.min(100, Math.max(0, num(r.vacancy)));
+  const vacLoss = gpr * vacPct / 100;
+  const other = fieldMo(r, "otherInc", "fOtherInc");
+  const egi = gpr - vacLoss + other;
+
+  const opex = sumMo(r.opex);
+  const reserveMo = fieldMo(r, "reserve", "fReserve");
+
+  const noiMo = egi - opex;
+  const noiYr = noiMo * 12;
+
+  const useM = r.finType !== "none";
+  const isSeller = r.finType === "seller";
+  const price = num(r.price);
+  const dpAmt = useM ? (isSeller ? num(r.sfDpAmt) : price * num(r.dpPct) / 100) : 0;
+  const loan = useM ? Math.max(0, price - dpAmt) : 0;
+  const ratePct = num(r.rate);
+
+  let pi = 0, pmi = 0, balloonBal = 0, balloonYrs = 0, sellerIO = false;
+  if (r.finType === "mortgage") {
+    pi = mortgagePI(loan, ratePct, Math.max(1, num(r.term)));
+    pmi = fieldMo(r, "pmi", "fPmi");
+  } else if (isSeller) {
+    sellerIO = !!r.sfIO;
+    const amortYrs = Math.max(1, num(r.sfAmort));
+    const rMo = ratePct / 100 / 12;
+    pi = sellerIO ? loan * rMo : mortgagePI(loan, ratePct, amortYrs);
+    balloonYrs = Math.max(0, num(r.sfBalloon));
+    if (balloonYrs > 0) {
+      const k = Math.round(balloonYrs * 12);
+      if (sellerIO) balloonBal = loan;
+      else if (rMo === 0) balloonBal = Math.max(0, loan - pi * k);
+      else balloonBal = Math.max(0, loan * Math.pow(1 + rMo, k) - pi * (Math.pow(1 + rMo, k) - 1) / rMo);
+    }
+  }
+  const taxMo = useM ? fieldMo(r, "taxes", "fTaxes") : 0;
+  const insMo = useM ? fieldMo(r, "ins", "fIns") : 0;
+  const debtMo = pi + pmi + taxMo + insMo;
+
+  /* "match draw to down payment" mirrors the original, which overwrote the
+     draw field on every recalc — here it is derived instead of written back. */
+  const useH = !!r.useHeloc;
+  const hAmt = useH ? (r.helocMatch ? Math.round(dpAmt) : num(r.helocAmt)) : 0;
+  const hInt = useH ? hAmt * num(r.helocRate) / 100 / 12 : 0;
+  const hPrin = useH ? fieldMo(r, "helocPrin", "fHelocPrin") : 0;
+  const helocMo = hInt + hPrin;
+  const helocPayoffMo = hPrin > 0 ? Math.ceil(hAmt / hPrin) : 0;
+
+  const cfMo = noiMo - reserveMo - debtMo - helocMo;
+  const cfYr = cfMo * 12;
+
+  const cap = (useM && price > 0) ? noiYr / price * 100 : null;
+  const cashIn = useM ? (useH ? Math.max(0, dpAmt - hAmt) : dpAmt) : 0;
+  const coc = cashIn > 0 ? cfYr / cashIn * 100 : null;
+  const dscr = debtMo * 12 > 0 ? noiYr / (debtMo * 12) : null;
+  const expRatio = egi > 0 ? (opex / egi) * 100 : null;
+
+  /* seller's take — down payment + every payment + balloon payoff */
+  let take = null;
+  if (isSeller) {
+    if (sellerIO && balloonYrs === 0) take = { never: true };
+    else {
+      const amortYrsT = Math.max(1, num(r.sfAmort));
+      const kPay = balloonYrs > 0 ? Math.round(balloonYrs * 12) : Math.round(amortYrsT * 12);
+      const payoff = balloonYrs > 0 ? balloonBal : 0;
+      const paymentsTotal = pi * kPay;
+      const totalTake = dpAmt + paymentsTotal + payoff;
+      take = { kPay, payoff, paymentsTotal, totalTake, interestEarned: totalTake - price, pi, dpAmt, price, balloonYrs };
+    }
+  }
+
+  return { gpr, vacPct, vacLoss, other, egi, opex, reserveMo, noiMo, noiYr, useM, isSeller, sellerIO,
+    price, dpAmt, loan, pi, pmi, taxMo, insMo, debtMo, balloonBal, balloonYrs,
+    useH, hAmt, hInt, hPrin, helocMo, helocPayoffMo, cfMo, cfYr, cap, cashIn, coc, dscr, expRatio, take };
+};
+
 /* ---------- shared UI bits ---------- */
 const Lbl = ({ children }) => (
   <div style={{ fontFamily: T.disp, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: T.inkSoft, marginBottom: 4, fontWeight: 600 }}>{children}</div>
@@ -356,6 +467,14 @@ function App() {
   const [saveName, setSaveName] = useState("");
   const [importText, setImportText] = useState("");
   const [toast, setToast] = useState("");
+
+  /* rental state lives here (not inside the view) so switching tabs never
+     discards work in progress. Draft autosave covers refreshes. */
+  const [rental, setRental] = useState({ ...DEFAULT_RENTAL });
+  const [rentalSaved, setRentalSaved] = useState([]);
+  const [rentalName, setRentalName] = useState("");
+  const [rentalPick, setRentalPick] = useState("");
+  const R = (k, v) => setRental((r) => ({ ...r, [k]: v }));
 
   const D = (k, v) => setDeal((d) => ({ ...d, [k]: v }));
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2500); };
@@ -504,6 +623,96 @@ function App() {
     } catch { flash("Delete failed"); }
   };
 
+  /* ---- rental persistence (own keys — never mixed with rf-deals) ---- */
+  const RENTAL_KEY = "rf-rental-deals-v1";
+  const RENTAL_DRAFT = "rf-rental-draft-v1";
+
+  const refreshRentals = async () => {
+    try { const r = await storageShim.get(RENTAL_KEY); setRentalSaved(r ? JSON.parse(r.value) : []); }
+    catch { setRentalSaved([]); }
+  };
+  useEffect(() => { refreshRentals(); }, []);
+
+  /* restore the in-progress draft once on boot, so a refresh never loses work */
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await storageShim.get(RENTAL_DRAFT);
+        if (!d) return;
+        const p = JSON.parse(d.value);
+        if (p && p.rental) { setRental({ ...DEFAULT_RENTAL, ...p.rental }); setRentalName(p.name || ""); }
+      } catch {}
+    })();
+  }, []);
+
+  /* debounced draft autosave (400ms), matching the original calculator */
+  const draftFirst = useRef(true);
+  useEffect(() => {
+    if (draftFirst.current) { draftFirst.current = false; return; }
+    const t = setTimeout(() => {
+      storageShim.set(RENTAL_DRAFT, JSON.stringify({ name: rentalName, rental })).catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+  }, [rental, rentalName]);
+
+  const saveRental = async () => {
+    const name = rentalName.trim() || rental.addr.trim();
+    if (!name) { flash("Name the rental first (or fill in the address)"); return; }
+    try {
+      let list = [];
+      try { const r = await storageShim.get(RENTAL_KEY); list = r ? JSON.parse(r.value) : []; } catch {}
+      const payload = { name, savedAt: new Date().toISOString(), rental };
+      const idx = list.findIndex((x) => x.name === name);
+      if (idx >= 0) list[idx] = payload; else list.push(payload);
+      await storageShim.set(RENTAL_KEY, JSON.stringify(list));
+      setRentalSaved(list); setRentalName(name); setRentalPick(name); flash(`Saved "${name}"`);
+    } catch { flash("Save failed — storage unavailable"); }
+  };
+  const loadRental = (name) => {
+    const p = rentalSaved.find((x) => x.name === name);
+    if (!p) return;
+    setRental({ ...DEFAULT_RENTAL, ...p.rental });
+    setRentalName(p.name); setRentalPick(p.name); flash(`Loaded "${p.name}"`);
+  };
+  const deleteRental = async (name) => {
+    if (!name) { flash("Pick a saved rental first"); return; }
+    try {
+      const list = rentalSaved.filter((x) => x.name !== name);
+      await storageShim.set(RENTAL_KEY, JSON.stringify(list));
+      setRentalSaved(list); setRentalPick(""); flash(`Deleted "${name}"`);
+    } catch { flash("Delete failed"); }
+  };
+  const newRental = () => {
+    setRental({ ...DEFAULT_RENTAL, income: DEFAULT_RENTAL.income.map((l) => ({ ...l, amt: "" })) });
+    setRentalName(""); setRentalPick(""); flash("New rental — blank");
+  };
+  /* export the rental on its own — nothing from the flip side rides along */
+  const exportRental = () => {
+    const name = rentalName.trim() || rental.addr.trim() || "rental-deal";
+    const data = { type: "rf-rental-deal", name, deal: rental };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "-").toLowerCase() + ".json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    flash("Rental exported");
+  };
+  const importRentalFile = (file) => {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const data = JSON.parse(rd.result);
+        const d = data.deal || data;
+        setRental({ ...DEFAULT_RENTAL, ...d });
+        if (data.name) setRentalName(data.name);
+        flash("Rental imported");
+      } catch { flash("Couldn't read that file — it doesn't look like a saved rental"); }
+    };
+    rd.readAsText(file);
+  };
+
   const importDeal = () => {
     try {
       const p = JSON.parse(importText);
@@ -532,6 +741,49 @@ function App() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
         input[type=number]::-webkit-inner-spin-button{opacity:.4}
         button:focus-visible,input:focus-visible{outline:2px solid ${T.teal};outline-offset:1px}
+        /* ---- Rental Analyzer. Everything is scoped under .rv: the original
+           stylesheet used bare label/input selectors that would otherwise
+           leak into and restyle the flip analyzer. ---- */
+        .rv label{display:block;font-family:${T.disp};font-size:13px;font-weight:600;color:${T.inkSoft};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+        .rv input[type=text],.rv input[type=number],.rv select{width:100%;padding:8px 10px;border:1px solid ${T.line};border-radius:3px;font-family:${T.mono};font-size:14px;color:${T.ink};background:#fff}
+        .rv input[type=range]{width:100%;accent-color:${T.teal}}
+        .rv input[type=checkbox]{width:17px;height:17px;accent-color:${T.teal}}
+        .rv .row{display:grid;gap:12px;margin-bottom:12px}
+        .rv .r2{grid-template-columns:1fr 1fr}
+        .rv .r3{grid-template-columns:1fr 1fr 1fr}
+        @media(max-width:600px){.rv .r3{grid-template-columns:1fr 1fr}}
+        .rv .seg{display:inline-flex;border:1px solid ${T.line};border-radius:3px;overflow:hidden}
+        .rv .seg button{border:0;background:#fff;padding:7px 16px;font-family:${T.disp};font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:${T.inkSoft};cursor:pointer}
+        .rv .seg button.on{background:${T.teal};color:#fff}
+        .rv .money{display:flex;gap:0}
+        .rv .money input{border-radius:3px 0 0 3px;border-right:0;text-align:right}
+        .rv .freq{border:1px solid ${T.line};border-radius:0 3px 3px 0;background:#F2F5F7;color:${T.inkSoft};font-family:${T.mono};font-size:12px;font-weight:600;padding:0 9px;cursor:pointer;min-width:46px;white-space:nowrap}
+        .rv .freq[data-f="yr"]{background:#DEEDF7;color:${T.tealDark};border-color:${T.teal}}
+        .rv table.lines{width:100%;border-collapse:collapse}
+        .rv table.lines th{font-family:${T.disp};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:${T.inkSoft};text-align:left;padding:6px 8px;background:#DEEDF7;border-bottom:2px solid ${T.line}}
+        .rv table.lines td{padding:6px 8px;border-bottom:1px solid ${T.line}}
+        .rv table.lines td input{padding:6px 8px}
+        .rv table.lines .amt{width:190px}
+        .rv .del{border:0;background:none;color:${T.red};font-size:16px;cursor:pointer;padding:2px 6px;line-height:1}
+        .rv .add{margin-top:10px;border:1px dashed ${T.teal};background:#DEEDF7;color:${T.tealDark};font-family:${T.disp};font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:13px;padding:7px 14px;border-radius:3px;cursor:pointer}
+        .rv .calcnote{font-family:${T.mono};font-size:12px;color:${T.inkSoft};background:#F5F7F9;border-left:3px solid ${T.teal};padding:8px 10px;margin-top:10px;border-radius:0 3px 3px 0}
+        .rv .toggle-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+        .rv .toggle-row label{margin:0;text-transform:none;font-family:${T.body};font-size:14px;font-weight:500;color:${T.ink};letter-spacing:0}
+        .rv .taketbl{width:100%;border-collapse:collapse;font-family:${T.mono};font-size:12px;background:#fff}
+        .rv .taketbl td{padding:5px 10px;border-bottom:1px solid ${T.line}}
+        .rv .taketbl td:last-child{text-align:right;white-space:nowrap}
+        .rv .taketbl tr.tt td{font-weight:700;font-size:13px;color:${T.tealDark};border-bottom:none;border-top:2px solid ${T.teal}}
+        .rv .taketbl tr.dim td{color:${T.inkSoft}}
+        .rv .pl{width:100%;border-collapse:collapse;font-family:${T.mono};font-size:13px}
+        .rv .pl td{padding:5px 8px;border-bottom:1px solid ${T.paper}}
+        .rv .pl td:nth-child(2),.rv .pl td:nth-child(3){text-align:right;white-space:nowrap}
+        .rv .pl tr.head td{font-family:${T.disp};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:${T.inkSoft};border-bottom:2px solid ${T.line};padding-top:12px}
+        .rv .pl tr.sub td{font-weight:600;background:#F7F9FA}
+        .rv .pl tr.total td{font-weight:700;font-size:15px;border-top:2px solid ${T.ink};border-bottom:3px double ${T.ink};padding:8px}
+        .rv .metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+        .rv .metric{border:1px solid ${T.line};border-radius:3px;padding:10px;text-align:center}
+        .rv .metric .v{font-family:${T.mono};font-weight:700;font-size:18px}
+        .rv .metric .k{font-family:${T.disp};font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:${T.inkSoft}}
         @media print{
           .no-print{display:none!important}
           body{background:#fff!important}
@@ -542,16 +794,19 @@ function App() {
       <div className="no-print" style={{ background: T.ink, color: "#fff", padding: "14px 22px", display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", lineHeight: 1 }}>Chandler Biggs</div>
-          <div style={{ fontFamily: T.mono, fontSize: 11, color: "#9FB2C1", letterSpacing: "0.08em" }}>FLIP ANALYZER + REPAIR ESTIMATOR</div>
+          {/* subtitle below names all three tools */}
+          <div style={{ fontFamily: T.mono, fontSize: 11, color: "#9FB2C1", letterSpacing: "0.08em" }}>DEAL ANALYZER · RENTALS + FLIPS + REPAIR ESTIMATOR</div>
         </div>
         <div style={{ display: "flex", gap: 2, marginLeft: "auto", alignItems: "center" }}>
-          {[["analyzer", "Flip Analyzer"], ["estimator", "Repair Estimator"], ["review", "Review"], ["saved", `Saved Deals (${saved.length})`]].map(([k, l]) => (
+          {[["rental", "Rental Analyzer"], ["analyzer", "Flip Analyzer"], ["estimator", "Repair Estimator"], ["review", "Review"], ["saved", `Saved Deals (${saved.length})`]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)}
               style={{ padding: "9px 16px", fontFamily: T.disp, fontSize: 14, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase",
                 cursor: "pointer", border: "none", borderRadius: 3,
                 background: view === k ? T.teal : "transparent", color: view === k ? "#fff" : "#9FB2C1" }}>{l}</button>
           ))}
-          <button onClick={() => { setView("review"); setTimeout(() => window.print(), 350); }}
+          {/* Print the tab you're on: rentals print the rental sheet, everything
+              else routes through the flip Review report as before. */}
+          <button onClick={() => { if (view !== "rental") setView("review"); setTimeout(() => window.print(), 350); }}
             style={{ marginLeft: 10, padding: "9px 16px", fontFamily: T.disp, fontSize: 14, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase",
               cursor: "pointer", border: "none", borderRadius: 3, background: "#fff", color: T.ink }}>🖨 Print Report</button>
         </div>
@@ -562,6 +817,267 @@ function App() {
       <div style={{ display: "flex", gap: 16, padding: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         {/* ============ LEFT: content ============ */}
         <div style={{ flex: "1 1 560px", minWidth: 340 }}>
+
+          {view === "rental" && (() => {
+            const rc = rentalCalc(rental);
+            const Freq = ({ fk }) => (
+              <button type="button" className="freq" data-f={rental[fk]}
+                onClick={() => R(fk, rental[fk] === "mo" ? "yr" : "mo")}>/{rental[fk]}</button>
+            );
+            const setLine = (key, i, patch) => R(key, rental[key].map((l, n) => (n === i ? { ...l, ...patch } : l)));
+            const delLine = (key, i) => R(key, rental[key].filter((_, n) => n !== i));
+            const LineTable = ({ tkey, head, ph }) => (
+              <table className="lines">
+                <thead><tr><th>{head}</th><th className="amt">{tkey === "income" ? "Rent" : "Amount"}</th><th style={{ width: 30 }}></th></tr></thead>
+                <tbody>
+                  {rental[tkey].map((l, i) => (
+                    <tr key={i}>
+                      <td><input type="text" value={l.name} placeholder={ph} onChange={(e) => setLine(tkey, i, { name: e.target.value })} /></td>
+                      <td className="amt"><div className="money">
+                        <input type="number" min="0" step="10" placeholder="0" value={l.amt} onChange={(e) => setLine(tkey, i, { amt: e.target.value })} />
+                        <button type="button" className="freq" data-f={l.f}
+                          onClick={() => setLine(tkey, i, { f: l.f === "mo" ? "yr" : "mo" })}>/{l.f}</button>
+                      </div></td>
+                      <td><button className="del" title="Remove line" onClick={() => delLine(tkey, i)}>×</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+            const RCard = ({ tag, title, hint, children }) => (
+              <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 4, marginBottom: 18, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: `1px solid ${T.line}`, background: "#FAFBFC" }}>
+                  <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.tealDark, border: `1px solid ${T.teal}`, padding: "2px 7px", borderRadius: 3, letterSpacing: "0.08em" }}>{tag}</span>
+                  <span style={{ fontFamily: T.disp, fontSize: 18, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</span>
+                  {hint && <span style={{ marginLeft: "auto", fontSize: 12, color: T.inkSoft }}>{hint}</span>}
+                </div>
+                <div style={{ padding: 16 }}>{children}</div>
+              </div>
+            );
+            return (
+              <div className="rv">
+                {/* ---- deal manager (rental only) ---- */}
+                <div className="no-print" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", background: T.panel, border: `1px solid ${T.line}`, borderRadius: 4, padding: "10px 12px", marginBottom: 16 }}>
+                  <span style={{ fontFamily: T.disp, fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: T.inkSoft }}>Rental</span>
+                  <input type="text" style={{ flex: 1, minWidth: 180 }} placeholder="Name this rental (e.g. 1605 Bridge St NW)"
+                    value={rentalName} onChange={(e) => setRentalName(e.target.value)} />
+                  <button onClick={saveRental} style={{ padding: "7px 12px", background: T.ink, color: "#fff", border: "none", borderRadius: 3, fontFamily: T.disp, fontWeight: 600, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em", cursor: "pointer", whiteSpace: "nowrap" }}>Save</button>
+                  <select style={{ maxWidth: 240, width: "auto" }} value={rentalPick} onChange={(e) => { setRentalPick(e.target.value); if (e.target.value) loadRental(e.target.value); }}>
+                    <option value="">— Open saved rental ({rentalSaved.length}) —</option>
+                    {rentalSaved.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+                  </select>
+                  <button onClick={() => deleteRental(rentalPick)} style={{ padding: "7px 12px", background: "#fff", color: T.red, border: `1px solid #E4C4C0`, borderRadius: 3, fontFamily: T.disp, fontWeight: 600, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em", cursor: "pointer" }}>Delete</button>
+                  {[["New", newRental], ["Export File", exportRental]].map(([l, fn]) => (
+                    <button key={l} onClick={fn} style={{ padding: "7px 12px", background: "#fff", color: T.inkSoft, border: `1px solid ${T.line}`, borderRadius: 3, fontFamily: T.disp, fontWeight: 600, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em", cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
+                  ))}
+                  <label style={{ margin: 0, padding: "7px 12px", background: "#fff", color: T.inkSoft, border: `1px solid ${T.line}`, borderRadius: 3, fontFamily: T.disp, fontWeight: 600, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    Import File
+                    <input type="file" accept=".json,application/json" style={{ display: "none" }}
+                      onChange={(e) => { importRentalFile(e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                </div>
+
+                {/* ---- sticky verdict bar ---- */}
+                <div style={{ position: "sticky", top: 0, zIndex: 20, background: T.ink, borderBottom: `3px solid ${T.teal}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "10px 16px", flexWrap: "wrap", marginBottom: 16, borderRadius: 4 }}>
+                  {[["Cash Flow / Mo", fmt(Math.round(rc.cfMo)), rc.cfMo >= 0, 26],
+                    ["Cash Flow / Yr", fmt(Math.round(rc.cfYr)), rc.cfYr >= 0, 26],
+                    ["NOI / Yr", fmt(Math.round(rc.noiYr)), null, 18],
+                    ["Cap Rate", rc.cap === null ? "—" : rc.cap.toFixed(2) + "%", null, 18]].map(([lbl, val, good, size], i) => (
+                    <div key={i} style={{ textAlign: "center", minWidth: 140 }}>
+                      <div style={{ fontFamily: T.disp, textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 12, color: "#8FA2B6" }}>{lbl}</div>
+                      <div style={{ fontFamily: T.mono, fontWeight: 700, fontSize: size, lineHeight: 1.1, color: good === null ? "#fff" : good ? "#4CD98B" : "#FF7B6B" }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <RCard tag="01" title="Property">
+                  <div className="row"><div><label>Address</label>
+                    <input type="text" placeholder="1605 Bridge St NW, Grand Rapids, MI" value={rental.addr} onChange={(e) => R("addr", e.target.value)} /></div></div>
+                  <div className="row r3">
+                    <div><label>Bedrooms</label><input type="number" min="0" step="1" placeholder="0" value={rental.beds} onChange={(e) => R("beds", e.target.value)} /></div>
+                    <div><label>Bathrooms</label><input type="number" min="0" step="0.5" placeholder="0" value={rental.baths} onChange={(e) => R("baths", e.target.value)} /></div>
+                    <div><label>Rent Basis</label>
+                      <div className="seg">
+                        {[["unit", "By Unit"], ["room", "By Room"]].map(([v, l]) => (
+                          <button key={v} type="button" className={rental.basis === v ? "on" : ""} onClick={() => R("basis", v)}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </RCard>
+
+                <RCard tag="02" title="Income & Vacancy" hint="Tap /mo · /yr to switch each line">
+                  <LineTable tkey="income" head={rental.basis === "unit" ? "Unit" : "Room"} ph="" />
+                  <button className="add" onClick={() => R("income", [...rental.income, { name: (rental.basis === "unit" ? "Unit " : "Room ") + (rental.income.length + 1), amt: "", f: "mo" }])}>
+                    + Add {rental.basis === "unit" ? "unit" : "room"}</button>
+                  <div className="row r2" style={{ marginTop: 16 }}>
+                    <div><label>Vacancy — % of gross potential rent</label>
+                      <input type="number" min="0" max="100" step="0.5" value={rental.vacancy} onChange={(e) => R("vacancy", e.target.value)} /></div>
+                    <div><label>Other Income (laundry, storage, pet rent)</label>
+                      <div className="money"><input type="number" min="0" step="10" value={rental.otherInc} onChange={(e) => R("otherInc", e.target.value)} /><Freq fk="fOtherInc" /></div></div>
+                  </div>
+                  <div className="calcnote">Gross potential {fmt(Math.round(rc.gpr))}/mo − vacancy {fmt(Math.round(rc.vacLoss))} + other {fmt(Math.round(rc.other))} = {fmt(Math.round(rc.egi))}/mo effective</div>
+                </RCard>
+
+                <RCard tag="03" title="Operating Expenses" hint="Tap /mo · /yr to switch each line">
+                  <LineTable tkey="opex" head="Expense" ph="Expense name" />
+                  <button className="add" onClick={() => R("opex", [...rental.opex, { name: "", amt: "", f: "mo" }])}>+ Add expense line</button>
+                  <div className="calcnote">Total operating expenses: {fmt(Math.round(rc.opex))}/mo · {fmt(Math.round(rc.opex * 12))}/yr</div>
+                </RCard>
+
+                <RCard tag="04" title="CapEx Reserve" hint="Savings set-aside for future capital items">
+                  <div className="row r2"><div><label>CapEx Set-Aside</label>
+                    <div className="money"><input type="number" min="0" step="100" value={rental.reserve} onChange={(e) => R("reserve", e.target.value)} /><Freq fk="fReserve" /></div></div></div>
+                  <div className="calcnote">Setting aside {fmt(Math.round(rc.reserveMo))}/mo · {fmt(Math.round(rc.reserveMo * 12))}/yr toward future capital items</div>
+                </RCard>
+
+                <RCard tag="05" title="Financing">
+                  <div className="row"><div><label>Financing Type</label>
+                    <div className="seg">
+                      {[["none", "Cash / None"], ["mortgage", "Mortgage"], ["seller", "Seller Finance"]].map(([v, l]) => (
+                        <button key={v} type="button" className={rental.finType === v ? "on" : ""} onClick={() => R("finType", v)}>{l}</button>
+                      ))}
+                    </div>
+                  </div></div>
+
+                  {rental.finType !== "none" && (<>
+                    <div className="row r2">
+                      <div><label>Purchase Price ($)</label><input type="number" min="0" step="1000" value={rental.price} onChange={(e) => R("price", e.target.value)} /></div>
+                      <div><label>Interest Rate (% APR)</label><input type="number" min="0" step="0.125" value={rental.rate} onChange={(e) => R("rate", e.target.value)} /></div>
+                    </div>
+
+                    {rental.finType === "mortgage" && (
+                      <div className="row r2">
+                        <div><label>Down Payment: {num(rental.dpPct)}% — {fmt(Math.round(num(rental.price) * num(rental.dpPct) / 100))}</label>
+                          <input type="range" min="5" max="25" step="0.5" value={rental.dpPct} onChange={(e) => R("dpPct", e.target.value)} /></div>
+                        <div><label>Loan Term (years)</label><input type="number" min="1" step="1" value={rental.term} onChange={(e) => R("term", e.target.value)} /></div>
+                      </div>
+                    )}
+
+                    {rental.finType === "seller" && (<>
+                      <div className="row r2">
+                        <div><label>Down Payment to Seller ($)</label>
+                          <input type="number" min="0" step="500" value={rental.sfDpAmt} onChange={(e) => R("sfDpAmt", e.target.value)} /></div>
+                        <div><label>Or Slide By Percent: {(num(rental.price) > 0 ? Math.round(num(rental.sfDpAmt) / num(rental.price) * 1000) / 10 : 0)}% of price</label>
+                          <input type="range" min="0" max="100" step="0.5"
+                            value={num(rental.price) > 0 ? Math.min(100, Math.max(0, num(rental.sfDpAmt) / num(rental.price) * 100)) : 0}
+                            onChange={(e) => R("sfDpAmt", Math.round(num(rental.price) * num(e.target.value) / 100))} /></div>
+                      </div>
+                      <div className="row r2">
+                        <div><label>Amortization (years)</label><input type="number" min="1" step="1" value={rental.sfAmort} onChange={(e) => R("sfAmort", e.target.value)} /></div>
+                        <div><label>Balloon Due In (years — 0 = no balloon)</label><input type="number" min="0" step="1" value={rental.sfBalloon} onChange={(e) => R("sfBalloon", e.target.value)} /></div>
+                      </div>
+                      <div className="toggle-row">
+                        <input type="checkbox" id="rv-sfIO" checked={!!rental.sfIO} onChange={(e) => R("sfIO", e.target.checked)} />
+                        <label htmlFor="rv-sfIO">Interest-only payments until balloon</label>
+                      </div>
+                      <div style={{ marginTop: 14, border: `1px solid ${T.teal}`, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ background: "#DEEDF7", padding: "6px 10px", fontFamily: T.disp, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 13, color: T.tealDark }}>Seller's Take — What They Earn On This Deal</div>
+                        <table className="taketbl"><tbody>
+                          {rc.take && rc.take.never ? (
+                            <tr><td colSpan="2" style={{ color: T.red }}>Interest-only with no balloon never pays off — set a balloon year to see totals.</td></tr>
+                          ) : rc.take ? (<>
+                            <tr><td>Down payment at closing</td><td>{fmt(Math.round(rc.take.dpAmt))}</td></tr>
+                            <tr><td>Monthly payments ({rc.take.kPay} mo × {fmt(Math.round(rc.take.pi))})</td><td>{fmt(Math.round(rc.take.paymentsTotal))}</td></tr>
+                            {rc.take.payoff > 0 && <tr><td>Balloon payoff at year {rc.take.balloonYrs}</td><td>{fmt(Math.round(rc.take.payoff))}</td></tr>}
+                            <tr className="tt"><td>TOTAL TO SELLER</td><td>{fmt(Math.round(rc.take.totalTake))}</td></tr>
+                            <tr className="dim"><td>vs. cash sale today</td><td>{fmt(Math.round(rc.take.price))}</td></tr>
+                            <tr className="dim"><td>Extra earned by carrying the note</td><td>{(rc.take.interestEarned < 0 ? "-" : "+") + fmt(Math.abs(Math.round(rc.take.interestEarned)))}</td></tr>
+                          </>) : null}
+                        </tbody></table>
+                      </div>
+                    </>)}
+
+                    <div className="row r3">
+                      {rental.finType === "mortgage" && (
+                        <div><label>PMI</label>
+                          <div className="money"><input type="number" min="0" step="5" value={rental.pmi} onChange={(e) => R("pmi", e.target.value)} /><Freq fk="fPmi" /></div></div>
+                      )}
+                      <div><label>Property Taxes</label>
+                        <div className="money"><input type="number" min="0" step="100" value={rental.taxes} onChange={(e) => R("taxes", e.target.value)} /><Freq fk="fTaxes" /></div></div>
+                      <div><label>Insurance</label>
+                        <div className="money"><input type="number" min="0" step="100" value={rental.ins} onChange={(e) => R("ins", e.target.value)} /><Freq fk="fIns" /></div></div>
+                    </div>
+                    <div className="calcnote">
+                      {rental.finType === "mortgage"
+                        ? `Loan ${fmt(rc.loan)}  ·  P&I ${fmt(Math.round(rc.pi))}/mo  ·  PITI+PMI ${fmt(Math.round(rc.debtMo))}/mo`
+                        : `Seller note ${fmt(rc.loan)}  ·  ${rc.sellerIO ? "interest-only " : ""}payment ${fmt(Math.round(rc.pi))}/mo` +
+                          (rc.balloonYrs > 0 ? `  ·  BALLOON ${fmt(Math.round(rc.balloonBal))} due at year ${rc.balloonYrs}` : "  ·  no balloon (full amortization)")}
+                    </div>
+                  </>)}
+                </RCard>
+
+                <RCard tag="06" title="HELOC — Down Payment Funding">
+                  <div className="toggle-row">
+                    <input type="checkbox" id="rv-useHeloc" checked={!!rental.useHeloc} onChange={(e) => R("useHeloc", e.target.checked)} />
+                    <label htmlFor="rv-useHeloc">Down payment funded with a HELOC — include its carry cost</label>
+                  </div>
+                  {rental.useHeloc && (<>
+                    <div className="row r3">
+                      <div><label>HELOC Draw ($)</label>
+                        <input type="number" min="0" step="500" value={rental.helocMatch ? Math.round(rc.dpAmt) : rental.helocAmt}
+                          onChange={(e) => setRental((r) => ({ ...r, helocAmt: e.target.value, helocMatch: false }))} /></div>
+                      <div><label>HELOC Rate (% APR)</label><input type="number" min="0" step="0.125" value={rental.helocRate} onChange={(e) => R("helocRate", e.target.value)} /></div>
+                      <div><label>Principal Paydown</label>
+                        <div className="money"><input type="number" min="0" step="50" value={rental.helocPrin} onChange={(e) => R("helocPrin", e.target.value)} /><Freq fk="fHelocPrin" /></div></div>
+                    </div>
+                    <div className="toggle-row">
+                      <input type="checkbox" id="rv-helocMatch" checked={rental.helocMatch !== false} onChange={(e) => R("helocMatch", e.target.checked)} />
+                      <label htmlFor="rv-helocMatch">Match draw to down payment automatically</label>
+                    </div>
+                    <div className="calcnote">
+                      Interest {fmt(Math.round(rc.hInt))}/mo on {fmt(rc.hAmt)}
+                      {rc.hPrin > 0 ? `  ·  paid off in ~${rc.helocPayoffMo} mo (${(rc.helocPayoffMo / 12).toFixed(1)} yr) at current paydown` : "  ·  interest-only (no paydown entered)"}
+                    </div>
+                  </>)}
+                </RCard>
+
+                {/* ---- P&L ---- */}
+                <RCard tag="P&L" title="Profit & Loss">
+                  <table className="pl"><tbody>
+                    <tr className="head"><td>Income</td><td>Monthly</td><td>Annual</td></tr>
+                    <tr><td>Gross potential rent</td><td>{fmt(Math.round(rc.gpr))}</td><td>{fmt(Math.round(rc.gpr * 12))}</td></tr>
+                    <tr><td>Vacancy ({rc.vacPct}%)</td><td>{fmt(Math.round(-rc.vacLoss))}</td><td>{fmt(Math.round(-rc.vacLoss * 12))}</td></tr>
+                    {rc.other !== 0 && <tr><td>Other income</td><td>{fmt(Math.round(rc.other))}</td><td>{fmt(Math.round(rc.other * 12))}</td></tr>}
+                    <tr className="sub"><td>Effective gross income</td><td>{fmt(Math.round(rc.egi))}</td><td>{fmt(Math.round(rc.egi * 12))}</td></tr>
+                    <tr className="head"><td>Operating Expenses</td><td></td><td></td></tr>
+                    <tr><td>Total OpEx</td><td>{fmt(Math.round(-rc.opex))}</td><td>{fmt(Math.round(-rc.opex * 12))}</td></tr>
+                    <tr className="sub"><td>Net operating income</td><td>{fmt(Math.round(rc.noiMo))}</td><td>{fmt(Math.round(rc.noiMo * 12))}</td></tr>
+                    <tr className="head"><td>Reserves</td><td></td><td></td></tr>
+                    <tr><td>CapEx reserve set-aside</td><td>{fmt(Math.round(-rc.reserveMo))}</td><td>{fmt(Math.round(-rc.reserveMo * 12))}</td></tr>
+                    {rc.useM && (<>
+                      <tr className="head"><td>Debt Service{rc.isSeller ? " — Seller Note" : ""}</td><td></td><td></td></tr>
+                      <tr><td>{rc.isSeller ? (rc.sellerIO ? "Interest-only payment" : "Note payment (P&I)") : "Principal & interest"}</td><td>{fmt(Math.round(-rc.pi))}</td><td>{fmt(Math.round(-rc.pi * 12))}</td></tr>
+                      {rc.pmi !== 0 && <tr><td>PMI</td><td>{fmt(Math.round(-rc.pmi))}</td><td>{fmt(Math.round(-rc.pmi * 12))}</td></tr>}
+                      {rc.taxMo !== 0 && <tr><td>Property taxes</td><td>{fmt(Math.round(-rc.taxMo))}</td><td>{fmt(Math.round(-rc.taxMo * 12))}</td></tr>}
+                      {rc.insMo !== 0 && <tr><td>Insurance</td><td>{fmt(Math.round(-rc.insMo))}</td><td>{fmt(Math.round(-rc.insMo * 12))}</td></tr>}
+                      {rc.isSeller && rc.balloonYrs > 0 && (
+                        <tr><td style={{ color: T.tealDark, fontWeight: 700 }}>⚠ Balloon due yr {rc.balloonYrs}</td><td></td><td style={{ color: T.tealDark, fontWeight: 700 }}>{fmt(Math.round(rc.balloonBal))}</td></tr>
+                      )}
+                    </>)}
+                    {rc.useH && rc.helocMo !== 0 && (<>
+                      <tr className="head"><td>HELOC</td><td></td><td></td></tr>
+                      <tr><td>HELOC interest</td><td>{fmt(Math.round(-rc.hInt))}</td><td>{fmt(Math.round(-rc.hInt * 12))}</td></tr>
+                      {rc.hPrin !== 0 && <tr><td>HELOC principal paydown</td><td>{fmt(Math.round(-rc.hPrin))}</td><td>{fmt(Math.round(-rc.hPrin * 12))}</td></tr>}
+                    </>)}
+                    <tr className="total">
+                      <td>NET {rc.cfMo >= 0 ? "PROFIT" : "LOSS"}</td>
+                      <td style={{ color: rc.cfMo >= 0 ? T.green : T.red }}>{fmt(Math.round(rc.cfMo))}</td>
+                      <td style={{ color: rc.cfYr >= 0 ? T.green : T.red }}>{fmt(Math.round(rc.cfYr))}</td>
+                    </tr>
+                  </tbody></table>
+                  <div className="metrics">
+                    {[[rc.cap === null ? "—" : rc.cap.toFixed(2) + "%", "Cap Rate"],
+                      [rc.coc === null ? (rc.useM && rc.useH ? "∞ (0 cash in)" : "—") : rc.coc.toFixed(1) + "%", "Cash-on-Cash"],
+                      [rc.dscr === null ? "—" : rc.dscr.toFixed(2), "DSCR"],
+                      [rc.expRatio === null ? "—" : rc.expRatio.toFixed(0) + "%", "Expense Ratio"]].map(([v, k]) => (
+                      <div className="metric" key={k}><div className="v">{v}</div><div className="k">{k}</div></div>
+                    ))}
+                  </div>
+                </RCard>
+              </div>
+            );
+          })()}
 
           {view === "analyzer" && (
             <>
@@ -970,8 +1486,9 @@ function App() {
           )}
         </div>
 
-        {/* ============ RIGHT: live ledger ============ */}
-        <div className="no-print" style={{ flex: "0 1 340px", minWidth: 300, position: "sticky", top: 16 }}>
+        {/* ============ RIGHT: live ledger (flip side only — the rental tab
+            carries its own P&L panel) ============ */}
+        <div className="no-print" style={{ flex: "0 1 340px", minWidth: 300, position: "sticky", top: 16, display: view === "rental" ? "none" : undefined }}>
           {/* The verdict is where the decision gets made, so warn here too — a
               "clears" stamp computed on a $0 rehab is worse than no stamp at all. */}
           {noScope && (
