@@ -24,6 +24,17 @@ Replaces FlipperForce ($30/mo). Live at https://chandlerjbiggs.github.io/deal-la
 ## Pricing calibration (from real flip close-outs — 312 Beverly St, Sturgis)
 The estimator library labor prices reflect Chandler's crew model: general laborers ($30–35/hr GR) do demo, paint, trim, doors, fixtures, kitchen installs, small framing, handyman work in-house. Hired-out trades keep market pricing: concrete, roofing, windows, flooring/carpet, plumbing/electrical/HVAC rough-in, full siding, masonry rebuilds. Calibrated numbers already in the library: windows $375/ea installed, concrete $6.50–8/SF, LVP $3.35/SF all-in, carpet $2.50/SF, kitchen economy $8,500, PM fee line $7,500 under General Conditions. Don't revert these to FlipperForce defaults.
 
+## How Chandler actually uses this — read INTAKE.md
+Two passes per property: **pre-walk** (wholesaler email + photos → rough purchase price, to decide
+whether the property is worth driving to) and **post-walk** (voice-memo transcript + new photos →
+adjusted budget). Deals are committed to `deals/` as JSON at both passes, so the diff shows what the
+walk changed. Full process, rules, and file format: [INTAKE.md](INTAKE.md).
+
+Two things that trip people up:
+- **Claude cannot transcribe audio.** The voice memo must arrive as text (iPhone Voice Memos does it).
+- **Never hand Chandler a purchase price computed in chat.** Build the deal block; the app's iterative
+  MAO solve is the verified number.
+
 ## Deal import/export schema (Saved Deals tab)
 `{ name, deal: {address, arv, sqft, purchase, repairMode, ...}, adders: {location, contingency, ohp, laborTax, matTax}, estRows: [{tab, cat, desc, unit, qty, labor, material, custom?}] }`
 estRows matching library (tab, cat, desc) override qty/prices; non-matching rows append as custom. Claude (chat) generates these blocks after analyzing wholesaler deals — never break backward compatibility with this schema.
