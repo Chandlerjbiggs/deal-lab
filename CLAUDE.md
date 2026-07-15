@@ -6,8 +6,11 @@ Replaces FlipperForce ($30/mo). Live at https://chandlerjbiggs.github.io/deal-la
 ## Architecture
 - **Single-source app.** `river-forged-deal-lab.jsx` is the source of truth — one React component, no build system.
 - **`index.html` is the deployable** — the same JSX embedded in an HTML shell that loads React 18 UMD + Babel standalone from cdnjs and transpiles in-browser. A `storageShim` maps the artifact `window.storage` API to `localStorage`.
-- **Build = regenerate index.html from the jsx**: strip the React import (use globals), unwrap `export default`, replace `window.storage` → `storageShim`, embed in the HTML template (see current index.html for the exact shell). Keep this process or replace with a proper Vite build — either is fine, but the deployed site must stay a static GitHub Pages site.
-- **Deploy**: commit `index.html` to main → GitHub Pages auto-deploys.
+- **Build = `node build.js`** — regenerates `index.html` from the jsx. No dependencies, no `node_modules`; plain Node, nothing to install. It strips the React import (uses UMD globals), unwraps `export default`, replaces `window.storage` → `storageShim`, and embeds the result in the HTML shell held in `build.js`. Every transform asserts it matched — if the jsx changes shape, the build fails loudly instead of shipping a broken `index.html`.
+  - `node build.js --check` verifies `index.html` is up to date without writing (exit 1 if stale).
+  - Never hand-edit `index.html` — it is generated, and the next build overwrites it. Edit the jsx.
+  - The HTML shell (CDN versions, `storageShim`, favicon) lives in `build.js`; change it there.
+- **Deploy**: `node build.js` → commit both the jsx and `index.html` to main → GitHub Pages auto-deploys from main root.
 - Saved deals live in each browser's localStorage under key `rf-deals`. Never break that key or users lose their deals.
 
 ## Math invariants — do not change without Chandler's sign-off
