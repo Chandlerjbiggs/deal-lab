@@ -1,0 +1,7 @@
+# The repo is LF-only. Windows has core.autocrlf=true globally, which would
+# otherwise check these out as CRLF while build.js writes LF — making
+# index.html show as permanently "modified". Pin LF and the problem is gone.
+*.html text eol=lf
+*.jsx  text eol=lf
+*.js   text eol=lf
+*.md   text eol=lf

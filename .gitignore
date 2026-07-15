@@ -1,0 +1,12 @@
+# Windows / OneDrive junk
+Thumbs.db
+desktop.ini
+Desktop.ini
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Note: index.html is intentionally NOT ignored.
+# It is the file GitHub Pages deploys — it must stay committed.
