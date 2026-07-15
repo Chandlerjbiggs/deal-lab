@@ -26,6 +26,14 @@ property is worth driving to. Speed matters more than precision here.
 4. Write it to `deals/<slug>.json` with `"stage": "pre-walk"`.
 
 **Rules**
+- **Always deliver a full scope breakdown, never a bare repair total.** Every generated block must set
+  `"repairMode": "detailed"` and include `estRows` covering the whole scope. Only `"detailed"` reads
+  from the estimator — `"lump"` and `"psf"` bypass it entirely (`river-forged-deal-lab.jsx:358`), which
+  produces a single unexplained number in Step 3 and an empty Repair Estimator tab. This has already
+  bitten Chandler once. A repair number he cannot break down line by line is not usable: he cannot
+  sanity-check it, cannot hand it to a contractor, and cannot adjust it after the walk.
+  - Corollary: `"detailed"` with empty `estRows` silently prices repairs at **$0** and makes any deal
+    look like a winner. If scope genuinely cannot be determined, say so — do not ship an empty block.
 - **The app's MAO is the number. Chat arithmetic is not.** The MAO solve is iterative (buying %
   and financing recalc at the offer price) and is verified to the dollar against FlipperForce.
   Never hand Chandler a purchase price computed in conversation — build the block, let the app run it.
@@ -79,7 +87,7 @@ only `deal`, and `loadDeal` reads only `name` / `deal` / `adders` / `estRows`, i
   "source": "wholesaler email 2026-07-15 / Drive photos",
   "assumptions": ["sqft from county record, not measured", "roof age unknown — carried full tear-off"],
   "unseen": ["subfloor", "panel capacity", "sewer line"],
-  "deal": { "address": "...", "arv": 0, "sqft": 0, "purchase": 0, "repairMode": "..." },
+  "deal": { "address": "...", "arv": 0, "sqft": 0, "purchase": 0, "repairMode": "detailed" },
   "adders": { "location": 0, "contingency": 0, "ohp": 0, "laborTax": 0, "matTax": 0 },
   "estRows": [{ "tab": "...", "cat": "...", "desc": "...", "unit": "...", "qty": 0, "labor": 0, "material": 0 }]
 }

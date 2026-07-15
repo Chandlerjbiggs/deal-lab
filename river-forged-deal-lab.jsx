@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 
-/* ============ RIVER FORGED DEAL LAB ============
+/* ======= CHANDLER BIGGS FLIP ANALYZER =========
    Flip Analyzer + Repair Estimator
+   (River Forged LLC — the "RF preset" is the
+    company's default assumption set.)
    Replicates FlipperForce math, verified against
    312 Beverly St packet + 123 West Main St demo.
 ================================================= */
@@ -512,8 +514,8 @@ export default function App() {
       {/* HEADER */}
       <div className="no-print" style={{ background: T.ink, color: "#fff", padding: "14px 22px", display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", lineHeight: 1 }}>River Forged</div>
-          <div style={{ fontFamily: T.mono, fontSize: 11, color: "#9FB2C1", letterSpacing: "0.08em" }}>DEAL LAB · FLIP ANALYZER + REPAIR ESTIMATOR</div>
+          <div style={{ fontFamily: T.disp, fontSize: 22, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", lineHeight: 1 }}>Chandler Biggs</div>
+          <div style={{ fontFamily: T.mono, fontSize: 11, color: "#9FB2C1", letterSpacing: "0.08em" }}>FLIP ANALYZER + REPAIR ESTIMATOR</div>
         </div>
         <div style={{ display: "flex", gap: 2, marginLeft: "auto", alignItems: "center" }}>
           {[["analyzer", "Flip Analyzer"], ["estimator", "Repair Estimator"], ["review", "Review"], ["saved", `Saved Deals (${saved.length})`]].map(([k, l]) => (
@@ -543,7 +545,7 @@ export default function App() {
                   + New Deal — RF Defaults</button>}>
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
                   <div><Lbl>Property address</Lbl>
-                    <input value={deal.address} onChange={(e) => D("address", e.target.value)} placeholder="312 Beverly St, Sturgis, MI"
+                    <input value={deal.address} onChange={(e) => D("address", e.target.value)} placeholder="123 Main St"
                       style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${T.line}`, borderRadius: 3, fontFamily: T.body, fontSize: 14 }} />
                   </div>
                   <div><Lbl>Square footage</Lbl><Inp value={deal.sqft} onChange={(v) => D("sqft", v)} suffix="SF" /></div>
