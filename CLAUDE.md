@@ -39,7 +39,7 @@ figure matched to the dollar. Treat it like the flip math: **do not change witho
 3. **MAO** is solved iteratively (buying % and financing recalc at the offer price). The Review tab also shows FlipperForce's static MPP for cross-checking against their reports.
 4. **Financing**: interest-only monthly = loan × rate/12. "Holdback" schedule = purchase portion accrues full term; rehab portion accrues at reno/2 + sales months.
 5. **Timeline rule**: every $1K rehab ≈ 1 work day, 21 work days/month.
-6. **RF preset**: 2% buying (3% under $75K purchase), 6% selling, $450/mo holding, 100% LTV purchase+repairs @ 12%, 0 points, holdback, $50K desired profit.
+6. **RF preset**: 2% buying (3% under $75K purchase), 5% selling (negotiated realtor rate, changed from 6% on Aug 17 2026 with Chandler's sign-off), $450/mo holding, 100% LTV purchase+repairs @ 12%, 0 points, holdback, $50K desired profit.
 
 ## Pricing calibration (from real flip close-outs — 312 Beverly St, Sturgis)
 The estimator library labor prices reflect Chandler's crew model: general laborers ($30–35/hr GR) do demo, paint, trim, doors, fixtures, kitchen installs, small framing, handyman work in-house. Hired-out trades keep market pricing: concrete, roofing, windows, flooring/carpet, plumbing/electrical/HVAC rough-in, full siding, masonry rebuilds. Calibrated numbers already in the library: windows $375/ea installed, concrete $6.50–8/SF, LVP $3.35/SF all-in, carpet $2.50/SF, kitchen economy $8,500, PM fee line $7,500 under General Conditions. Don't revert these to FlipperForce defaults.
