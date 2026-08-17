@@ -8,5 +8,10 @@ Desktop.ini
 .vscode/
 .idea/
 
+# Private pricing — this repo is public. RF-COST-LIBRARY.md lives in the
+# rf-deal-room repo and must never be committed here. It has drifted into
+# this folder before; this line keeps `git add -A` from sweeping it in.
+RF-COST-LIBRARY.md
+
 # Note: index.html is intentionally NOT ignored.
 # It is the file GitHub Pages deploys — it must stay committed.
