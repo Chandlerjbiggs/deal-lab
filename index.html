@@ -584,6 +584,13 @@ function App() {
     return { arv, purchase, repair, holdMonths, ...c, profit, allCosts, cashNeeded, cocr, annCocr, rule70, mao, mppStatic, desired, passes, baseTarget, stormFloor, allIn, basePass, stormPass, verdict, stress, rehabDays, suggReno };
   }, [deal, est]);
 
+  /* Read-only snapshot for run-deal.js, which drives this page headlessly and
+     reports the app's own numbers instead of re-deriving them. No math here. */
+  useEffect(() => {
+    window.dealLabResult = { deal, adders, calc, est, noScope, rfPreset: RF_PRESET,
+      activeRows: rows.filter((r) => num(r.qty) > 0).map(({ id, ...r }) => r) };
+  }, [deal, adders, calc, est, noScope, rows]);
+
   /* ---- persistence ---- */
   const refreshSaved = async () => {
     try { const r = await storageShim.get("rf-deals"); setSaved(r ? JSON.parse(r.value) : []); }

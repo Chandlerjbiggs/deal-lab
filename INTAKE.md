@@ -22,8 +22,12 @@ property is worth driving to. Speed matters more than precision here.
 1. Pull from the email: address, sqft, beds/baths, year built, asking price, their ARV claim
    and comps, and any disclosed issues. Treat the wholesaler's ARV as a claim, not a fact.
 2. Look at every photo. Build scope only from what is **visible**.
-3. Produce a deal block (see *Deal file format*) → Chandler imports it → **the app computes MAO**.
-4. Write it to `deals/<slug>.json` with `"stage": "pre-walk"`.
+3. Produce a deal block (see *Deal file format*) and write it to `deals/<slug>.json` with
+   `"stage": "pre-walk"`.
+4. **Run it through the app:** `node run-deal.js deals/<slug>.json --write`. This loads the real
+   app headlessly, imports the block, and stores the app's own MAO / profit / verdict / stress
+   test in the file as `appResult`. Report those numbers to Chandler. Fix every warning it prints
+   before reporting (missing fields fall back to generic defaults, not the RF preset).
 
 **Rules**
 - **Always deliver a full scope breakdown, never a bare repair total.** Every generated block must set
@@ -36,7 +40,8 @@ property is worth driving to. Speed matters more than precision here.
     look like a winner. If scope genuinely cannot be determined, say so — do not ship an empty block.
 - **The app's MAO is the number. Chat arithmetic is not.** The MAO solve is iterative (buying %
   and financing recalc at the offer price) and is verified to the dollar against FlipperForce.
-  Never hand Chandler a purchase price computed in conversation — build the block, let the app run it.
+  Never hand Chandler a purchase price computed in conversation — build the block, let the app run it
+  (`run-deal.js` runs it for you; its `appResult` is the app's number, not a re-derivation).
 - **Screen on the storm floor, not the base case.** Photo-only scope is the highest-uncertainty
   moment in the whole process. A deal that clears at base but fails the storm floor is not worth
   a drive — that is exactly what the storm floor is for.
@@ -65,7 +70,8 @@ property is worth driving to. Speed matters more than precision here.
    moisture issue — those are the budget killers and they rarely show up in listing photos.
 2. Load the pass-1 `deals/<slug>.json` and adjust `estRows` against what he actually saw.
 3. Save back to the **same file**, `"stage": "post-walk"`, keeping `name` identical so git shows a
-   clean diff and the app overwrites rather than duplicates the saved deal.
+   clean diff and the app overwrites rather than duplicates the saved deal. Re-run
+   `node run-deal.js deals/<slug>.json --write` so `appResult` reflects the walk.
 4. **Report the diff**: what the walk changed versus the pre-walk block, line by line, and why.
 
 **Why the diff matters:** over several flips it shows where photo-based estimates are consistently
@@ -97,6 +103,7 @@ only `deal`, and `loadDeal` reads only `name` / `deal` / `adders` / `estRows`, i
   append as custom. Never break backward compatibility with this schema.
 - Missing `deal` fields fall back to `DEFAULT_DEAL`, so partial blocks import fine.
 - File naming: `deals/YYYY-MM-DD-<address-slug>.json`.
+- `appResult` is written by `run-deal.js --write`. Never hand-edit it; the app ignores it on import.
 - Keep `name` stable between passes — it is the identity key the app saves/overwrites on.
 
 ## Why deals live in the repo

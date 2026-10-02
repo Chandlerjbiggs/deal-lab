@@ -13,6 +13,11 @@ Rapids MI house flipper). Replaces FlipperForce ($30/mo). Live at https://chandl
   - `node build.js --check` verifies `index.html` is up to date without writing (exit 1 if stale).
   - Never hand-edit `index.html` — it is generated, and the next build overwrites it. Edit the jsx.
   - The HTML shell (CDN versions, `storageShim`, favicon) lives in `build.js`; change it there.
+- **`node run-deal.js <deal.json> [--write] [--json]`** runs a deal file through the real app in headless
+  Chromium (Playwright) via Saved Deals → Import, and reports the app's own MAO, profit, verdict and stress
+  test. It reads a read-only `window.dealLabResult` snapshot the jsx publishes (no math in the runner) and
+  cross-checks the MAO against the Review tab. CDN scripts are served from the same pinned npm versions
+  (cdnjs is blocked in cloud sessions). `--write` stores the result in the file as `appResult`.
 - **Deploy**: `node build.js` → commit both the jsx and `index.html` to main → GitHub Pages auto-deploys from main root.
 - Saved deals live in each browser's localStorage under key `rf-deals`. Never break that key or users lose their deals.
 
@@ -52,8 +57,8 @@ walk changed. Full process, rules, and file format: [INTAKE.md](INTAKE.md).
 
 Two things that trip people up:
 - **Claude cannot transcribe audio.** The voice memo must arrive as text (iPhone Voice Memos does it).
-- **Never hand Chandler a purchase price computed in chat.** Build the deal block; the app's iterative
-  MAO solve is the verified number.
+- **Never hand Chandler a purchase price computed in chat.** Build the deal block and run it with
+  `node run-deal.js`; the app's iterative MAO solve is the verified number.
 
 ## Deal import/export schema (Saved Deals tab)
 `{ name, deal: {address, arv, sqft, purchase, repairMode, ...}, adders: {location, contingency, ohp, laborTax, matTax}, estRows: [{tab, cat, desc, unit, qty, labor, material, custom?}] }`
